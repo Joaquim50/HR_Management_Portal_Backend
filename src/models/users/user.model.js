@@ -9,10 +9,11 @@ const userSchema = new mongoose.Schema({
     password: String,
     role: {
         type: String,
-        enum: ["superadmin", "staff"],
+        enum: ["superadmin", "admin", "staff", "interviewer"],
         default: "staff"
     },
-    active: { type: Boolean, default: true }
+    active: { type: Boolean, default: true },
+    refreshTokens: [String]
 }, { timestamps: true });
 
 export default mongoose.model("User", userSchema);

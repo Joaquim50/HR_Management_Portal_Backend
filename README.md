@@ -11,11 +11,9 @@ This document provides a detailed overview of the available API endpoints, their
 ## Authentication
 
 ### Register User
-
 - **URL**: `/api/auth/register`
 - **Method**: `POST`
 - **Body**:
-
 ```json
 {
   "name": "Full Name",
@@ -24,21 +22,42 @@ This document provides a detailed overview of the available API endpoints, their
   "role": "staff" // "superadmin" or "staff"
 }
 ```
+- **Response**: Returns both tokens.
 
 ### Login
-
 - **URL**: `/api/auth/login`
 - **Method**: `POST`
 - **Body**:
-
 ```json
 {
   "email": "user@example.com",
   "password": "password123"
 }
 ```
+- **Response**: Returns `accessToken` (short-lived) and `refreshToken` (long-lived).
 
-- **Response**: Returns a JWT token. Use this token in the `Authorization` header as `Bearer <token>`.
+### Refresh Token
+- **URL**: `/api/auth/refresh`
+- **Method**: `POST`
+- **Body**:
+```json
+{
+  "token": "your_refresh_token"
+}
+```
+- **Response**: Returns a new `accessToken`.
+
+### Logout
+- **URL**: `/api/auth/logout`
+- **Method**: `POST`
+- **Auth**: Required
+- **Body**:
+```json
+{
+  "token": "your_refresh_token"
+}
+```
+- **Description**: Removes the specific refresh token from the database.
 
 ### Get Current User Profile
 
