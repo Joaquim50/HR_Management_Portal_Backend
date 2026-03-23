@@ -1,8 +1,8 @@
 import express from "express";
-import { 
-    syncCandidates, 
+import {
+    syncCandidates,
     bulkImportExcel,
-    getCandidates, 
+    getCandidates,
     getCandidateById,
     createCandidate,
     updateCandidateStatus,

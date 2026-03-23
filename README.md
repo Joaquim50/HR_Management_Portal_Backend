@@ -1,225 +1,236 @@
-# Employee Management System - Backend
+# HR Management Portal Backend API Documentation
 
-This project provides the backend services for the Employee Management System, built with Node.js, Express, and MongoDB.
+This document provides a detailed overview of the available API endpoints, their expected request bodies, and authorization requirements.
 
-## Authentication APIs
+## Base URL
 
-All authentication routes are prefixed with `/api/auth`.
+`http://localhost:5000` (or as configured in `.env`)
 
-| Endpoint             | Method | Description                   | Auth Required                   |
-| -------------------- | ------ | ----------------------------- | ------------------------------- |
-| `/api/auth/register` | `POST` | Register a new user           | No                              |
-| `/api/auth/login`    | `POST` | Authenticate user & get token | No                              |
-| `/api/auth/me`       | `GET`  | Get current user's profile    | Yes (`view_profile` permission) |
+---
 
-## Candidate APIs
+## Authentication
 
-All candidate routes are prefixed with `/api/candidates`.
-
-| Endpoint | Method | Description | Auth Required |
-|----------|--------|-------------|---------------|
-| `/api/candidates/sync` | `POST` | Sync data from Google Sheet | Yes (`superadmin` only) |
-| `/api/candidates/import` | `POST` | Bulk import from Excel (.xlsx) | Yes (`superadmin` only) |
-| `/api/candidates` | `GET` | Get candidates with pagination and sorting | Yes (Authenticated) |
-
-### GET /api/candidates Parameters
-- `page`: Page number (default: 1)
-- `limit`: Items per page (default: 10)
-- `sortBy`: Field to sort by (e.g., `createdAt`, `name`)
-- `order`: Sort order (`asc` or `desc`, default: `desc`)
-- `search`: Find by name or email (case-insensitive regex)
-- `role`: Filter by role
-- `status`: Filter by status
-
-**Response Format:**
-```json
-{
-  "candidates": [...],
-  "total": 120,
-  "page": 1,
-  "pages": 12
-}
-```
-| `/api/candidates/:id` | `GET` | Get candidate details with history and interview info | Yes (Authenticated) |
-| `/api/candidates` | `POST` | Create a candidate manually | Yes (Authenticated) |
-| `/api/candidates/:id/status` | `PATCH` | Update candidate status (appends to history) | Yes (Authenticated) |
-| `/api/candidates/:id` | `DELETE` | Delete a candidate | Yes (`superadmin` only) |
-
-### Bulk Import Format
-For Excel imports, use the following headers (case-sensitive or fuzzy-matched):
-- `Email address` or `Email` (Required)
-- `Full Name` or `Name`
-- `Phone NO` or `Phone Number`
-- `Role` or `Position` (JR MERN, SR MERN, HR, QA, DevOps)
-- Any other columns will be stored in the `details` map.
-
-## Role-Based Access Control (RBAC)
-
-The system uses a permission-based authorization middleware. For a detailed breakdown of all roles, permissions, and how to add new ones, see the [Roles and Permissions Guide](./ROLES_AND_PERMISSIONS.md).
-
-### Summary Table
-
-| Role         | Permissions                       | Description                       |
-|--------------|-----------------------------------|-----------------------------------|
-| `superadmin` | ALL (Bypasses checks)             | Full system control               |
-| `interviewer`| `view_profile`, `manage_interviews` | Candidate management & interviews |
-| `staff`      | `view_profile`                    | Basic access to profile/candidate info |
-
-### Usage in Routes
-
-```javascript
-import { protect, authorize } from "../../middlewares/auth.middleware.js";
-
-// Protect route with specific permission
-router.get(
-  "/protected-route",
-  protect,
-  authorize("your_permission"),
-  controller,
-);
-```
-
-### API Details
-
-#### 1. Register User
+### Register User
 
 - **URL**: `/api/auth/register`
 - **Method**: `POST`
 - **Body**:
-  ```json
-  {
-    "name": "John Doe",
-    "email": "john@example.com",
-    "password": "password123",
-    "role": "interviewer"
-  }
-  ```
-- **Success Response**: `201 Created` with token and user object.
 
-#### 2. Login User
+```json
+{
+  "name": "Full Name",
+  "email": "user@example.com",
+  "password": "password123",
+  "role": "staff" // "superadmin" or "staff"
+}
+```
+
+### Login
 
 - **URL**: `/api/auth/login`
 - **Method**: `POST`
 - **Body**:
-  ```json
-  {
-    "email": "john@example.com",
-    "password": "password123"
-  }
-  ```
-- **Success Response**: `200 OK` with token and user object.
 
-#### 3. Get Current User
-
-- **URL**: `/api/auth/me`
-- **Method**: `GET`
-- **Headers**: `Authorization: Bearer <token>`
-- **Success Response**: `200 OK` with user object.
-
-## Testing with Dummy Data
-
-### 1. Authentication
-
-#### Register a new Superadmin/Interviewer
-- **Endpoint**: `POST /api/auth/register`
-- **Body**:
 ```json
 {
-  "name": "Jane Doe",
-  "email": "jane@example.com",
-  "password": "password123",
-  "role": "superadmin"
-}
-```
-
-#### Login
-- **Endpoint**: `POST /api/auth/login`
-- **Body**:
-```json
-{
-  "email": "jane@example.com",
+  "email": "user@example.com",
   "password": "password123"
 }
 ```
 
----
+- **Response**: Returns a JWT token. Use this token in the `Authorization` header as `Bearer <token>`.
 
-### 2. Candidate Management
+### Get Current User Profile
 
-#### Create a Candidate Manually
-- **Endpoint**: `POST /api/candidates`
-- **Body**:
-```json
-{
-  "name": "John Smith",
-  "email": "john.smith@example.com",
-  "phone": "9876543210",
-  "role": "JR MERN"
-}
-```
-
-#### Update Candidate Status
-- **Endpoint**: `PATCH /api/candidates/{id}/status`
-- **Body**:
-```json
-{
-  "status": "Shortlisted"
-}
-```
-
-#### Get All Candidates (with filtering)
-- **Endpoint**: `GET /api/candidates?role=JR MERN&status=Pending`
+- **URL**: `/api/auth/me`
+- **Method**: `GET`
+- **Auth**: Required
 
 ---
 
-### 3. Bulk Operations
+## Candidates Module
 
-#### Google Sheets Sync
-- **Endpoint**: `POST /api/candidates/sync`
+### Get All Candidates (with Filters)
+
+- **URL**: `/api/candidates`
+- **Method**: `GET`
+- **Auth**: Required (`candidates.view`)
+- **Query Parameters**:
+  - `role`: Filter by role (e.g., "JR MERN", "HR")
+  - `status` or `stage`: Filter by status (e.g., "Pending", "Hired", "Rejected")
+  - `type`: "Fresher", "Experienced", "Intern", "Immediate Joiner", "Backup"
+  - `noticePeriod`: Filter by notice period
+  - `search`: Search by name, email, or phone
+  - `sortBy`: Field to sort by (default: `createdAt`)
+  - `order`: `asc` or `desc` (default: `desc`)
+  - `page` & `limit`: For pagination
+
+### Create Candidate (Manual)
+
+- **URL**: `/api/candidates`
 - **Method**: `POST`
+- **Auth**: Required (`candidates.create`)
+- **Body**: `multipart/form-data`
+  - `name`: string
+  - `email`: string
+  - `phone`: string
+  - `role`: string
+  - `resume`: File (Optional)
+  - `...additional fields`: Any other fields will be stored in `details`.
+
+### Sync from Google Sheets
+
+- **URL**: `/api/candidates/sync`
+- **Method**: `POST`
+- **Auth**: Required (`candidates.create`)
 - **Body**:
+
 ```json
 {
-  "role": "JR MERN"
+  "role": "JR MERN", // Optional: force specific role
+  "sheetId": "GSheetID" // Optional: override default
 }
 ```
-*(Optional: If provided, this role will be assigned to all candidates from the sheet)*
-- **Auth**: Requires Superadmin token in `Authorization` header.
 
-#### Excel Import
-- **Endpoint**: `POST /api/candidates/import`
-- **Method**: `multipart/form-data`
-- **Fields**:
-    - `file`: The `.xlsx` file (Required)
-    - `role`: The role to assign to all candidates in this file (Optional - e.g., `JR MERN`, `HR`). If omitted, the server looks for a "Role" column in the file.
-- **Sample Excel Data**:
-| Email | Name | Phone NO |
-|-------|------|----------|
-| test@example.com | Test User | 1234567890 |
+### Bulk Import Excel
+
+- **URL**: `/api/candidates/import`
+- **Method**: `POST`
+- **Auth**: Required (`candidates.create`)
+- **Body**: `multipart/form-data`
+  - `file`: .xlsx or .csv file
+  - `role`: Optional global role
+
+### Update Candidate Status
+
+- **URL**: `/api/candidates/:id/status`
+- **Method**: `PATCH`
+- **Auth**: Required (`candidates.update`)
+- **Body**:
+
+```json
+{
+  "status": "Hired" // "Rejected", "Interviewing", "Pending", etc.
+}
+```
 
 ---
 
-## Setup
+## Job Openings Module
 
-1. Install dependencies: `npm install`
-2. Create a `.env` file in the root directory. Use `.env.example` as a template:
-   ```bash
-   cp .env.example .env
-   ```
-3. Update the values in `.env` with your actual configuration.
-4. Start the server: `npm start` (runs on port 2000 by default)
+### Get All Job Openings
 
-## Initial Superadmin Creation
+- **URL**: `/api/jobs`
+- **Method**: `GET`
+- **Auth**: Required (`job-openings.view`)
 
-To create the initial superadmin user, you can run the following command from the project root:
+### Create Job Opening
+
+- **URL**: `/api/jobs`
+- **Method**: `POST`
+- **Auth**: Required (`job-openings.create`)
+- **Body**:
+
+```json
+{
+  "role": "Senior Developer",
+  "requiredCount": 5,
+  "category": "Full-time", // "Internship", "Contract"
+  "description": "Job details..."
+}
+```
+
+### Update/Delete Job Opening
+
+- **URL**: `/api/jobs/:id`
+- **Method**: `PUT` / `DELETE`
+- **Auth**: Required (`job-openings.update` / `delete`)
+
+---
+
+## Interviews (Pipeline) Module
+
+### Schedule Interview
+
+- **URL**: `/api/interviews`
+- **Method**: `POST`
+- **Auth**: Required (`pipeline.create`)
+- **Body**:
+
+```json
+{
+  "candidate": "CandidateID",
+  "jobOpening": "JobID",
+  "interviewer": "UserID",
+  "scheduledAt": "2024-03-25T10:00:00Z",
+  "mode": "Online", // "Offline"
+  "location": "Zoom Link / Address",
+  "type": "Technical" // "HR", "Cultural"
+}
+```
+
+### Update Interview (Feedback/Rating)
+
+- **URL**: `/api/interviews/:id`
+- **Method**: `PUT`
+- **Auth**: Required (`pipeline.update`)
+- **Body**:
+
+```json
+{
+  "status": "Completed",
+  "feedback": "Great technical skills.",
+  "rating": 4 // 1 to 5
+}
+```
+
+---
+
+## User & Permission Management
+
+### Get All Users
+
+- **URL**: `/api/users`
+- **Method**: `GET`
+- **Auth**: Required
+
+### Update User Permissions
+
+- **URL**: `/api/users/:id/permissions`
+- **Method**: `PATCH`
+- **Auth**: Required
+- **Body**:
+
+```json
+{
+  "permissions": [
+    {
+      "module": "ModuleID",
+      "canView": true,
+      "canCreate": false,
+      "canUpdate": true,
+      "canDelete": false
+    }
+  ]
+}
+```
+
+### Module Management
+
+- **URL**: `/api/users/modules`
+- **Method**: `GET` / `POST` / `PATCH` / `DELETE`
+- **Auth**: Required (Superadmin only)
+
+---
+
+## Development & Seeding
+
+### Seed Modules
+
+To reset or initialize the module list:
 
 ```bash
-node src/utils/seed_admin.js
+node src/utils/seed_modules.js
 ```
 
-By default, this will create a superadmin with:
-
-- **Email**: `admin@gmail.com`
-- **Password**: `admin@123`
-
-You can also create a superadmin via the `/api/auth/register` API by setting `"role": "superadmin"` in the request body.
+This will register all 7 standard modules (Dashboard, Candidates, Pipeline, etc.) with the 4 basic CRUD actions.

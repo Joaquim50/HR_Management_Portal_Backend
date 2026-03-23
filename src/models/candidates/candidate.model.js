@@ -8,10 +8,11 @@ const candidateSchema = new mongoose.Schema({
     submissionDate: String,
     role: {
         type: String,
-        enum: ["JR MERN", "SR MERN", "HR", "QA", "DevOps", "Other"],
+        enum: ["JR MERN", "SR MERN", "HR", "QA", "DevOps", "Flutter", "UI/UX", "Other"],
         default: "Other"
     },
     resumeLink: String,
+    experience: { type: String, default: "0" },
     source: { type: String, default: "Google Form" },
 
     // Status tracking

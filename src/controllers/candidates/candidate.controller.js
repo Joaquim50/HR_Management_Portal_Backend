@@ -2,14 +2,15 @@ import xlsx from "xlsx";
 import fs from "fs";
 import * as sheetService from "../../services/sheet.service.js";
 import Candidate from "../../models/candidates/candidate.model.js";
+import { updateJobStats } from "../../utils/jobUtils.js";
 
 // @desc    Sync candidates from Google Sheets
 // @route   POST /api/candidates/sync
 // @access  Private (Superadmin only)
 export const syncCandidates = async (req, res) => {
     try {
-        const { role } = req.body;
-        const result = await sheetService.syncSheetData(req.user._id, role);
+        const { role, sheetId } = req.body;
+        const result = await sheetService.syncSheetData(req.user._id, role, sheetId);
         res.json({ message: "Sync completed successfully", data: result });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -34,6 +35,7 @@ export const bulkImportExcel = async (req, res) => {
 
         let createdCount = 0;
         let updatedCount = 0;
+        let skippedCount = 0;
 
         for (const row of data) {
             const email = row["Email address"] || row["Email"];
@@ -56,42 +58,57 @@ export const bulkImportExcel = async (req, res) => {
                 else if (ri.includes("DEVOPS")) role = "DevOps";
             }
 
-            const details = new Map();
+            // Extract experience based on keywords
+            let experience = "0";
             Object.keys(row).forEach(key => {
-                if (!["Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number", "Role", "Position"].includes(key)) {
-                    details.set(key, row[key]);
+                const k = key.toLowerCase();
+                if (k.includes("experience") || k.includes("work exp") || k.includes("years of")) {
+                    if (experience === "0" || !experience) {
+                        experience = String(row[key]);
+                    }
+                }
+            });
+
+            const details = {};
+            Object.keys(row).forEach(key => {
+                const k = key.trim();
+                if (!["Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number", "Role", "Position"].includes(k)) {
+                    const cleanKey = k.replace(/\./g, "_");
+                    details[cleanKey] = row[key];
                 }
             });
 
             let candidate = await Candidate.findOne({ email });
 
-            if (!candidate) {
-                candidate = new Candidate({
-                    name,
-                    email,
-                    phone,
-                    role,
-                    details,
-                    submissionDate: row["Submission Date"] || row["Timestamp"] || new Date().toISOString(),
-                    status: "Pending",
-                    statusHistory: [{ status: "Pending", changedAt: new Date(), changedBy: req.user._id }]
-                });
-                await candidate.save();
-                createdCount++;
-            } else {
-                candidate.name = name || candidate.name;
-                candidate.phone = phone || candidate.phone;
-                candidate.role = role || candidate.role;
-                candidate.details = details;
-                await candidate.save();
-                updatedCount++;
+            if (candidate) {
+                skippedCount++;
+                continue;
+            }
+
+            candidate = new Candidate({
+                name,
+                email,
+                phone,
+                role,
+                experience,
+                details,
+                submissionDate: row["Submission Date"] || row["Timestamp"] || new Date().toISOString(),
+                status: "Pending",
+                statusHistory: [{ status: "Pending", changedAt: new Date(), changedBy: req.user._id }]
+            });
+            await candidate.save();
+            createdCount++;
+
+            // Recalculate job stats
+            if (candidate.role) {
+                await updateJobStats(candidate.role);
             }
         }
 
         // Clean up uploaded file
         fs.unlinkSync(req.file.path);
 
-        res.json({ message: "Import completed", createdCount, updatedCount });
+        res.json({ message: "Import completed", createdCount, updatedCount, skippedCount });
     } catch (error) {
         if (req.file) fs.unlinkSync(req.file.path);
         res.status(500).json({ error: error.message });
@@ -103,11 +120,53 @@ export const bulkImportExcel = async (req, res) => {
 // @access  Private
 export const getCandidates = async (req, res) => {
     try {
-        const { role, status, sortBy = "createdAt", order = "desc", page = 1, limit = 10, search } = req.query;
+        const { 
+            role, 
+            status, 
+            stage, // Alias for status
+            type, // Intern, Fresher, Experienced, etc.
+            noticePeriod, 
+            sortBy = "createdAt", 
+            order = "desc", 
+            page = 1, 
+            limit = 10, 
+            search 
+        } = req.query;
 
         const query = {};
-        if (role) query.role = role;
-        if (status) query.status = status;
+
+        // Role Filter (Exact or partial match)
+        if (role && role !== "All") {
+            const safeRole = role.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            query.role = { $regex: safeRole, $options: "i" };
+        }
+
+        // Stage/Status Filter
+        const targetStatus = status || stage;
+        if (targetStatus && targetStatus !== "All Stages") {
+            query.status = targetStatus;
+        }
+
+        // Candidate Type Filter (Fresher, Experienced, Intern, Immediate Joiner, Backup)
+        if (type && type !== "All") {
+            if (type === "Fresher") {
+                query.experience = { $regex: /^0/, $options: "i" };
+            } else if (type === "Experienced") {
+                query.experience = { $ne: "0", $exists: true };
+            } else if (type === "Immediate Joiner") {
+                query["details.Notice Period"] = { $regex: /Immediate/i };
+            } else if (type === "Intern") {
+                query.role = { $regex: /Intern/i };
+            } else if (type === "Backup") {
+                query.status = "Backup";
+            }
+        }
+
+        // Notice Period Filter
+        if (noticePeriod && noticePeriod !== "All") {
+            const safeNotice = noticePeriod.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            query["details.Notice Period"] = { $regex: safeNotice, $options: "i" };
+        }
 
         // Global Search (Name, Email, Phone, Status, Role)
         if (search) {
@@ -227,7 +286,6 @@ export const updateCandidateStatus = async (req, res) => {
         }
 
         if (candidate.status !== status) {
-            candidate.status = status;
             candidate.statusHistory.push({
                 status: status,
                 changedAt: new Date(),
@@ -245,8 +303,18 @@ export const updateCandidateStatus = async (req, res) => {
                     console.error("Error deleting resume file:", err.message);
                 }
             }
-
+            
+            const oldRole = candidate.role; // Store old role before updating status
+            candidate.status = status; // Update status after old role is captured
             await candidate.save();
+
+            // Recalculate job stats for old and new roles if role changed or status changed
+            if (oldRole) {
+                await updateJobStats(oldRole);
+            }
+            if (candidate.role && candidate.role !== oldRole) {
+                await updateJobStats(candidate.role);
+            }
         }
 
         res.json(candidate);

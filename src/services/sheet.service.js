@@ -1,42 +1,32 @@
 import axios from "axios";
 import Candidate from "../models/candidates/candidate.model.js";
-import { google } from 'googleapis'; // Added import for googleapis
+import { updateJobStats } from "../utils/jobUtils.js";
 
-export const syncSheetData = async (userId, globalRole = null) => { 
-    // Removed old API_KEY and SHEET_ID variables as new auth method is used
-    const RANGE = "Form Responses 1";
+export const syncSheetData = async (userId, globalRole = null, sheetId = null) => {
+    const RANGE = "Sheet1";
+    const API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
+    const SHEET_ID = sheetId || process.env.GOOGLE_SHEET_ID;
 
-    if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
-        throw new Error("Missing Google Sheets authentication variables: GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY");
+    if (!API_KEY || !SHEET_ID) {
+        throw new Error("Missing Google Sheets configuration: GOOGLE_SHEETS_API_KEY or GOOGLE_SHEET_ID");
     }
 
-    // New Google Sheets API authentication and setup
-    const auth = new google.auth.JWT(
-        process.env.GOOGLE_CLIENT_EMAIL,
-        null,
-        process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-        ['https://www.googleapis.com/auth/spreadsheets.readonly']
-    );
-
-    const sheets = google.sheets({ version: 'v4', auth });
-    const range = `${RANGE}!A:Z`; // Adjust sheet name as needed, using original RANGE
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(RANGE + "!A:Z")}?key=${API_KEY}`;
 
     try {
-        const response = await sheets.spreadsheets.values.get({ // Changed from axios.get to googleapis client
-            spreadsheetId: process.env.GOOGLE_SHEET_ID,
-            range,
-        });
+        const response = await axios.get(url);
         const rows = response.data.values;
 
-        if (!rows || rows.length === 0) { // Updated condition for empty rows
-            return { message: "No data found in sheet" }; // Updated message
+        if (!rows || rows.length === 0) {
+            return { message: "No data found in sheet" };
         }
 
-        const headers = rows[0];
+        const headers = rows[0].map(h => (h || "").trim().replace(/\./g, "_"));
         const dataRows = rows.slice(1);
 
         let createdCount = 0;
         let updatedCount = 0;
+        let skippedCount = 0;
 
         for (const row of dataRows) {
             const rowData = {};
@@ -63,44 +53,75 @@ export const syncSheetData = async (userId, globalRole = null) => {
                 else if (ri.includes("HR")) role = "HR";
                 else if (ri.includes("QA")) role = "QA";
                 else if (ri.includes("DEVOPS")) role = "DevOps";
+                else if (ri.includes("FLUTTER")) role = "Flutter";
+                else if (ri.includes("UI")) role = "UI/UX";
             }
 
+            // Extract experience based on keywords in headers
+            let experience = "0";
+            Object.keys(rowData).forEach(key => {
+                const k = key.toLowerCase();
+                if (k.includes("experience") || k.includes("work exp") || k.includes("years of")) {
+                    if (experience === "0" || !experience) { // Take the first meaningful one
+                        experience = rowData[key];
+                    }
+                }
+            });
+
             // Map flexible details
-            const details = new Map();
+            const details = {};
             Object.keys(rowData).forEach(key => {
                 if (!["Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number", "TimeStamp", "Timestamp", "Role", "Position"].includes(key)) {
-                    details.set(key, rowData[key]);
+                    details[key] = rowData[key];
                 }
             });
 
             let candidate = await Candidate.findOne({ email });
 
-            if (!candidate) {
-                candidate = new Candidate({
-                    name,
-                    email,
-                    phone,
-                    role,
-                    details,
-                    submissionDate: rowData["TimeStamp"] || rowData["Timestamp"],
-                    status: "Pending",
-                    statusHistory: [{ status: "Pending", changedAt: new Date(), changedBy: userId }]
-                });
-                await candidate.save();
-                createdCount++;
-            } else {
-                candidate.name = name || candidate.name;
-                candidate.phone = phone || candidate.phone;
-                candidate.role = role || candidate.role;
-                candidate.details = details;
-                await candidate.save();
-                updatedCount++;
+            if (candidate) {
+                skippedCount++;
+                continue;
             }
+
+            candidate = new Candidate({
+                name,
+                email,
+                phone,
+                role,
+                experience,
+                details,
+                submissionDate: rowData["TimeStamp"] || rowData["Timestamp"],
+                status: "Pending",
+                statusHistory: [{ status: "Pending", changedAt: new Date(), changedBy: userId }]
+            });
+            await candidate.save();
+            createdCount++;
         }
 
-        return { createdCount, updatedCount };
+        // Recalculate job stats for all processed roles
+        const uniqueRoles = [...new Set(dataRows.map(row => {
+            const roleInput = row[headers.indexOf("Role")] || row[headers.indexOf("Position")];
+            if (globalRole) return globalRole;
+            if (roleInput) {
+                const ri = roleInput.toUpperCase();
+                if (ri.includes("JR MERN")) return "JR MERN";
+                if (ri.includes("SR MERN")) return "SR MERN";
+                if (ri.includes("HR")) return "HR";
+                if (ri.includes("QA")) return "QA";
+                if (ri.includes("DEVOPS")) return "DevOps";
+                if (ri.includes("FLUTTER")) return "Flutter";
+                if (ri.includes("UI")) return "UI/UX";
+            }
+            return "Other";
+        }))];
+
+        for (const role of uniqueRoles) {
+            await updateJobStats(role);
+        }
+
+        return { createdCount, updatedCount, skippedCount };
     } catch (error) {
-        console.error("Error syncing Google Sheets:", error.response?.data || error.message);
+        console.error("Error syncing Google Sheets:", error.message);
         throw error;
     }
 };
