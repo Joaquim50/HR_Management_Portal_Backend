@@ -8,50 +8,57 @@ const candidateSchema = new mongoose.Schema({
     submissionDate: String,
     role: {
         type: String,
-        enum: ["JR MERN", "SR MERN", "HR", "QA", "DevOps", "Other"],
+        enum: ["JR MERN", "SR MERN", "HR", "QA", "DevOps", "Flutter", "UI/UX", "Other"],
         default: "Other"
     },
     resumeLink: String,
+    experience: { type: String, default: "0" },
     source: { type: String, default: "Google Form" },
 
     // Status tracking
     status: {
         type: String,
         enum: [
-            "Pending",
-            "Shortlisted",
-            "Interview Scheduled",
-            "Interviewed",
+            "New",
+            "Screening",
+            "Technical",
+            "Offer",
+            "Joined",
             "Rejected",
-            "Hired"
+            "Backup"
         ],
-        default: "Pending"
+        default: "New"
     },
     statusHistory: [
         {
             status: {
                 type: String,
                 enum: [
-                    "Pending",
-                    "Shortlisted",
-                    "Interview Scheduled",
-                    "Interviewed",
+                    "New",
+                    "Screening",
+                    "Technical",
+                    "Offer",
+                    "Joined",
                     "Rejected",
-                    "Hired"
+                    "Backup"
                 ]
             },
             changedAt: { type: Date, default: Date.now },
-            changedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" } // optional, track who updated
+            changedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }
         }
     ],
 
-    // Interview info
-    interview: {
-        scheduledAt: Date,
-        interviewer: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // link to User model
-        result: { type: String, enum: ["Pending", "Passed", "Failed"], default: "Pending" },
-        feedback: String // optional notes
-    },
+    // Manual data (not in spreadsheet)
+    tags: [String],
+    feedbacks: [
+        {
+            stage: { type: String, enum: ["Screening", "Technical", "Offer"] },
+            rating: { type: Number, min: 1, max: 5 },
+            comments: String, // Can store HTML/Rich Text
+            interviewer: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+            createdAt: { type: Date, default: Date.now }
+        }
+    ],
 
     // Flexible per-role details from forms
     details: {

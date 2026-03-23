@@ -11,22 +11,46 @@ const seedModules = async () => {
 
         const initialModules = [
             {
+                name: "Dashboard",
+                slug: "dashboard",
+                description: "Summary view of hiring progress and key metrics.",
+                actions: ["view", "create", "update", "delete"]
+            },
+            {
                 name: "Candidates",
                 slug: "candidates",
                 description: "Full management of candidate records, interviewing status, and data sync.",
                 actions: ["view", "create", "update", "delete"]
             },
             {
-                name: "Interviews",
-                slug: "interviews",
-                description: "Scheduling and managing interview feedback.",
-                actions: ["view", "manage"]
+                name: "Pipeline",
+                slug: "pipeline",
+                description: "Visualizing and managing candidates through the hiring pipeline.",
+                actions: ["view", "create", "update", "delete"]
             },
             {
-                name: "Users",
-                slug: "users",
-                description: "Staff management and permission assignments.",
-                actions: ["view", "manage"]
+                name: "Job Openings",
+                slug: "job-openings",
+                description: "Management of job roles and headcount tracking.",
+                actions: ["view", "create", "update", "delete"]
+            },
+            {
+                name: "Users & Permissions",
+                slug: "users-permissions",
+                description: "Internal user management and security settings.",
+                actions: ["view", "create", "update", "delete"]
+            },
+            {
+                name: "Email Templates",
+                slug: "email-templates",
+                description: "Creating and managing communication templates.",
+                actions: ["view", "create", "update", "delete"]
+            },
+            {
+                name: "Settings",
+                slug: "settings",
+                description: "System-wide configurations.",
+                actions: ["view", "create", "update", "delete"]
             }
         ];
 

@@ -5,8 +5,12 @@ import dotenv from "dotenv";
 import authRoutes from "./src/routes/auth/auth.routes.js";
 import candidateRoutes from "./src/routes/candidates/candidate.routes.js";
 import userRoutes from "./src/routes/users/user.routes.js";
+import jobOpeningRoutes from "./src/routes/jobs/jobOpening.routes.js";
+import interviewRoutes from "./src/routes/interviews/interview.routes.js";
+import path from "path";
 
 dotenv.config();
+const __dirname = path.resolve();
 
 const app = express();
 
@@ -15,10 +19,13 @@ connectDB();
 
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/candidates", candidateRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/jobs", jobOpeningRoutes);
+app.use("/api/interviews", interviewRoutes);
 
 app.get("/", (req, res) => {
     res.send("API Running");
