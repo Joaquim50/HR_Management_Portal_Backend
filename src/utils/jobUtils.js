@@ -16,7 +16,7 @@ export const updateJobStats = async (roleName) => {
         // 2. Count candidates by status for this role
         const hiredCount = await Candidate.countDocuments({ 
             role: roleName, 
-            status: "Hired" 
+            status: "Joined" 
         });
 
         const rejectedCount = await Candidate.countDocuments({ 

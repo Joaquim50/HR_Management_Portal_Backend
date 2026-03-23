@@ -350,3 +350,81 @@ export const deleteCandidate = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// @desc    Add a tag to a candidate
+// @route   POST /api/candidates/:id/tags
+// @access  Private
+export const addCandidateTag = async (req, res) => {
+    try {
+        const { tag } = req.body;
+        if (!tag) return res.status(400).json({ message: "Tag is required" });
+
+        const candidate = await Candidate.findByIdAndUpdate(
+            req.params.id,
+            { $addToSet: { tags: tag } },
+            { new: true }
+        );
+
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Remove a tag from a candidate
+// @route   DELETE /api/candidates/:id/tags
+// @access  Private
+export const removeCandidateTag = async (req, res) => {
+    try {
+        const { tag } = req.body;
+        if (!tag) return res.status(400).json({ message: "Tag is required" });
+
+        const candidate = await Candidate.findByIdAndUpdate(
+            req.params.id,
+            { $pull: { tags: tag } },
+            { new: true }
+        );
+
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Save stage-specific feedback
+// @route   POST /api/candidates/:id/feedback
+// @access  Private
+export const saveCandidateFeedback = async (req, res) => {
+    try {
+        const { stage, rating, comments } = req.body;
+        if (!stage || !comments) {
+            return res.status(400).json({ message: "Stage and comments are required" });
+        }
+
+        const candidate = await Candidate.findById(req.params.id);
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        // Update existing feedback for this stage or push new one
+        const feedbackIndex = candidate.feedbacks.findIndex(f => f.stage === stage);
+        const feedbackData = {
+            stage,
+            rating: Number(rating),
+            comments,
+            interviewer: req.user._id,
+            createdAt: new Date()
+        };
+
+        if (feedbackIndex > -1) {
+            candidate.feedbacks[feedbackIndex] = feedbackData;
+        } else {
+            candidate.feedbacks.push(feedbackData);
+        }
+
+        await candidate.save();
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};

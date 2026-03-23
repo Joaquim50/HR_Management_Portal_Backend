@@ -110,7 +110,37 @@ This document provides a detailed overview of the available API endpoints, their
 
 ```json
 {
-  "status": "Hired" // "Rejected", "Interviewing", "Pending", etc.
+  "status": "Joined" // "New", "Screening", "Technical", "Offer", "Rejected", "Backup"
+}
+```
+
+### Manual Data (Tags & Feedback)
+
+#### Add/Remove Tag
+
+- **URL**: `/api/candidates/:id/tags`
+- **Method**: `POST` / `DELETE`
+- **Auth**: Required (`candidates.update`)
+- **Body**:
+
+```json
+{
+  "tag": "Expert"
+}
+```
+
+#### Save Stage Feedback
+
+- **URL**: `/api/candidates/:id/feedback`
+- **Method**: `POST`
+- **Auth**: Required (`candidates.update`)
+- **Body**:
+
+```json
+{
+  "stage": "Technical", // "Screening", "Technical", "Offer"
+  "rating": 4,
+  "comments": "<p>Excellent performance.</p>"
 }
 ```
 
