@@ -169,6 +169,7 @@ export const createCandidate = async (req, res) => {
         const candidateExists = await Candidate.findOne({ email });
 
         if (candidateExists) {
+            if (req.file) fs.unlinkSync(req.file.path);
             return res.status(400).json({ message: "Candidate already exists" });
         }
 
@@ -195,6 +196,7 @@ export const createCandidate = async (req, res) => {
             phone,
             role: role || "Other",
             submissionDate: timestamp || req.body.submissionDate || new Date().toISOString(),
+            resumeLink: req.file ? req.file.path : (req.body.resumeLink || ""),
             details,
             status: req.body.status || "Pending",
             statusHistory: [{
@@ -207,6 +209,7 @@ export const createCandidate = async (req, res) => {
         await candidate.save();
         res.status(201).json(candidate);
     } catch (error) {
+        if (req.file) fs.unlinkSync(req.file.path);
         res.status(500).json({ error: error.message });
     }
 };
@@ -230,6 +233,19 @@ export const updateCandidateStatus = async (req, res) => {
                 changedAt: new Date(),
                 changedBy: req.user._id
             });
+
+            // Delete resume file if rejected
+            if (status === "Rejected" && candidate.resumeLink && candidate.resumeLink.startsWith("uploads")) {
+                try {
+                    if (fs.existsSync(candidate.resumeLink)) {
+                        fs.unlinkSync(candidate.resumeLink);
+                    }
+                    candidate.resumeLink = ""; // Clear the link after deletion
+                } catch (err) {
+                    console.error("Error deleting resume file:", err.message);
+                }
+            }
+
             await candidate.save();
         }
 
@@ -244,10 +260,23 @@ export const updateCandidateStatus = async (req, res) => {
 // @access  Private (Superadmin only)
 export const deleteCandidate = async (req, res) => {
     try {
-        const candidate = await Candidate.findByIdAndDelete(req.params.id);
+        const candidate = await Candidate.findById(req.params.id);
         if (!candidate) {
             return res.status(404).json({ message: "Candidate not found" });
         }
+
+        // Delete resume file if exists
+        if (candidate.resumeLink && candidate.resumeLink.startsWith("uploads")) {
+            try {
+                if (fs.existsSync(candidate.resumeLink)) {
+                    fs.unlinkSync(candidate.resumeLink);
+                }
+            } catch (err) {
+                console.error("Error deleting resume file during deletion:", err.message);
+            }
+        }
+
+        await Candidate.findByIdAndDelete(req.params.id);
         res.json({ message: "Candidate removed" });
     } catch (error) {
         res.status(500).json({ error: error.message });

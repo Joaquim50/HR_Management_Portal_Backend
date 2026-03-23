@@ -20,7 +20,7 @@ router.post("/import", protect, authorize("candidates", "create"), upload.single
 // Standard CRUD
 router.get("/", protect, authorize("candidates", "view"), getCandidates);
 router.get("/:id", protect, authorize("candidates", "view"), getCandidateById);
-router.post("/", protect, authorize("candidates", "create"), createCandidate);
+router.post("/", protect, authorize("candidates", "create"), upload.single("resume"), createCandidate);
 router.patch("/:id/status", protect, authorize("candidates", "update"), updateCandidateStatus);
 router.delete("/:id", protect, authorize("candidates", "delete"), deleteCandidate);
 
