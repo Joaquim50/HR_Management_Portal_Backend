@@ -12,8 +12,16 @@ const candidateSchema = new mongoose.Schema({
         default: "Other"
     },
     resumeLink: String,
-    experience: { type: String, default: "0" },
-    source: { type: String, default: "Google Form" },
+
+    // Detailed Candidate Info (Promoted to top-level)
+    candidateType: { type: String, enum: ["Experienced", "Fresher", "Intern", "Immediate Joiner", "Backup", "Other"], default: "Other" },
+    totalExperience: String,
+    relevantExperience: String,
+    noticePeriod: String,
+    currentCTC: String,
+    expectedCTC: String,
+    location: String,
+    source: { type: String, default: "Direct" },
 
     // Status tracking
     status: {
