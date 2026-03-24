@@ -10,8 +10,7 @@ import Activity from "../../models/dashboard/activity.model.js";
 // @access  Private (Superadmin only)
 export const syncCandidates = async (req, res) => {
     try {
-        const { role, sheetId } = req.body;
-        const result = await sheetService.syncSheetData(req.user._id, role, sheetId);
+        const result = await sheetService.syncSheetData(req.user._id);
         res.json({ message: "Sync completed successfully", data: result });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -32,31 +31,28 @@ export const bulkImportExcel = async (req, res) => {
         const sheet = workbook.Sheets[sheetName];
         const data = xlsx.utils.sheet_to_json(sheet);
 
-        const globalRole = req.body.role; // Role sent via multipart form field
 
         let createdCount = 0;
         let updatedCount = 0;
         let skippedCount = 0;
 
         for (const row of data) {
-            const email = row["Email address"] || row["Email"];
-            if (!email) continue;
+            const email = String(row["Email address"] || row["Email"] || "").trim();
+            const name = String(row["Full Name"] || row["Name"] || "").trim();
+            const phone = String(row["Phone NO"] || row["Phone Number"] || "").trim();
 
-            const name = row["Full Name"] || row["Name"];
-            const phone = row["Phone NO"] || row["Phone Number"];
+            if (!email || !name || !phone) continue;
+
             const roleInput = row["Role"] || row["Position"];
 
-            // Priority: 1. Global role from body, 2. Role from Excel column, 3. Default "Other"
+            // Priority: 1. Role from Excel column, 2. Default "Other"
             let role = "Other";
-            if (globalRole) {
-                role = globalRole;
-            } else if (roleInput) {
+            if (roleInput) {
                 const ri = roleInput.toUpperCase();
-                if (ri.includes("JR MERN")) role = "JR MERN";
-                else if (ri.includes("SR MERN")) role = "SR MERN";
-                else if (ri.includes("HR")) role = "HR";
+                if (ri.includes("MERN")) role = "FullStack MERN";
                 else if (ri.includes("QA")) role = "QA";
-                else if (ri.includes("DEVOPS")) role = "DevOps";
+                else if (ri.includes("FLUTTER")) role = "Flutter";
+                else if (ri.includes("UI") || ri.includes("UX")) role = "UI/UX";
             }
 
             // Map detailed fields from row
@@ -68,6 +64,12 @@ export const bulkImportExcel = async (req, res) => {
             let expectedCTC = "";
             let location = "";
             let source = "Excel Import";
+            let resumeLink = "";
+            let portfolioLink = "";
+            let skills = [];
+            let technologies = [];
+            let hasLiveExperience = "";
+            let mumbaiComfort = "";
 
             Object.keys(row).forEach(key => {
                 const k = key.toLowerCase().trim();
@@ -80,15 +82,26 @@ export const bulkImportExcel = async (req, res) => {
                 else if (k.includes("expected ctc") || k === "expected") expectedCTC = v;
                 else if (k === "location" || k === "current city") location = v;
                 else if (k === "source" || k.includes("how did you hear")) source = v;
+                else if (k.includes("resume")) resumeLink = v;
+                else if (k.includes("portfolio") || k.includes("github")) portfolioLink = v;
+                else if (k.includes("skills")) {
+                    skills = v ? v.split(",").map(s => s.trim()).filter(Boolean) : [];
+                }
+                else if (k.includes("technologies")) {
+                    technologies = v ? v.split(",").map(s => s.trim()).filter(Boolean) : [];
+                }
+                else if (k.includes("live") || k.includes("production")) hasLiveExperience = v;
+                else if (k.includes("comfort") || k.includes("mumbai") || k.includes("office") || k.includes("saturday") || k.includes("monday")) mumbaiComfort = v;
             });
 
             const details = {};
             const coreFields = [
-                "Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number", 
+                "Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number",
                 "Role", "Position", "Candidate Type", "Type",
                 "Total Experience", "Experience", "Work Exp", "Relevant Experience",
                 "Notice Period", "Current CTC", "CTC", "Expected CTC", "Expected",
-                "Location", "Current City", "Source", "Submission Date", "Timestamp"
+                "Location", "Current City", "Source", "Submission Date", "Timestamp",
+                "Portfolio", "Github", "Technologies", "Skills", "Live", "Production", "Comfort", "Mumbai", "Office", "Monday", "Saturday"
             ];
 
             Object.keys(row).forEach(key => {
@@ -119,6 +132,12 @@ export const bulkImportExcel = async (req, res) => {
                 expectedCTC,
                 location,
                 source,
+                resumeLink,
+                portfolioLink,
+                skills,
+                technologies,
+                hasLiveExperience,
+                mumbaiComfort,
                 details,
                 submissionDate: row["Submission Date"] || row["Timestamp"] || new Date().toISOString(),
                 status: "New",
@@ -178,7 +197,7 @@ export const getCandidates = async (req, res) => {
         // Candidate Type Filter (Fresher, Experienced, Intern, Immediate Joiner, Backup)
         if (type && type !== "All" && type !== "All Types") {
             const typeCriteria = [];
-            
+
             // 1. Check candidateType field (exact match after mapping)
             typeCriteria.push({ candidateType: type });
 
@@ -253,8 +272,7 @@ export const getCandidates = async (req, res) => {
 export const getCandidateById = async (req, res) => {
     try {
         const candidate = await Candidate.findById(req.params.id)
-            .populate("statusHistory.changedBy", "name email")
-            .populate("interview.interviewer", "name email");
+            .populate("statusHistory.changedBy", "name email");
 
         if (!candidate) {
             return res.status(404).json({ message: "Candidate not found" });
@@ -270,12 +288,13 @@ export const getCandidateById = async (req, res) => {
 // @access  Private
 export const createCandidate = async (req, res) => {
     try {
-        const { 
-            name, email, phone, role, 
+        const {
+            name, email, phone, role,
             candidateType, totalExperience, relevantExperience,
             noticePeriod, currentCTC, expectedCTC, location,
             source = "Direct",
-            status, stage, ...rest 
+            portfolioLink, skills, technologies, hasLiveExperience, mumbaiComfort,
+            status, stage, ...rest
         } = req.body;
 
         // Check if candidate already exists
@@ -288,10 +307,11 @@ export const createCandidate = async (req, res) => {
         // Collect remaining fields into details
         const details = {};
         const coreFields = [
-            "name", "email", "phone", "role", "candidateType", 
-            "totalExperience", "relevantExperience", "noticePeriod", 
-            "currentCTC", "expectedCTC", "location", "source", 
-            "status", "stage", "resumeLink", "details"
+            "name", "email", "phone", "role", "candidateType",
+            "totalExperience", "relevantExperience", "noticePeriod",
+            "currentCTC", "expectedCTC", "location", "source",
+            "status", "stage", "resumeLink", "details",
+            "portfolioLink", "skills", "technologies", "hasLiveExperience", "mumbaiComfort"
         ];
 
         Object.keys(rest).forEach(key => {
@@ -318,8 +338,13 @@ export const createCandidate = async (req, res) => {
             expectedCTC: expectedCTC || "",
             location: location || "",
             source: source || "Direct",
+            portfolioLink: portfolioLink || "",
+            skills: Array.isArray(skills) ? skills : (skills ? String(skills).split(",").map(s => s.trim()).filter(Boolean) : []),
+            technologies: Array.isArray(technologies) ? technologies : (technologies ? String(technologies).split(",").map(s => s.trim()).filter(Boolean) : []),
+            hasLiveExperience: hasLiveExperience || "",
+            mumbaiComfort: mumbaiComfort || "",
             submissionDate: new Date().toISOString(),
-            resumeLink: req.file ? req.file.path : (req.body.resumeLink || ""),
+            resumeLink: req.file ? req.file.path.replace(/\\/g, "/") : (req.body.resumeLink || req.body.resume || ""),
             details,
             status: status || stage || "New",
             statusHistory: [{
@@ -520,9 +545,22 @@ export const updateCandidate = async (req, res) => {
             return res.status(404).json({ message: "Candidate not found" });
         }
 
+        const updateData = { ...req.body };
+
+        if (req.file) {
+            updateData.resumeLink = req.file.path.replace(/\\/g, "/");
+            if (oldCandidate.resumeLink && oldCandidate.resumeLink.startsWith("uploads")) {
+                try {
+                    if (fs.existsSync(oldCandidate.resumeLink)) fs.unlinkSync(oldCandidate.resumeLink);
+                } catch (err) {
+                    console.error("Error deleting old resume:", err.message);
+                }
+            }
+        }
+
         const candidate = await Candidate.findByIdAndUpdate(
             req.params.id,
-            { $set: req.body },
+            { $set: updateData },
             { new: true, runValidators: true }
         );
 
@@ -544,6 +582,90 @@ export const updateCandidate = async (req, res) => {
             await candidate.save();
         }
 
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Add a skill to a candidate
+// @route   POST /api/candidates/:id/skills
+// @access  Private
+export const addCandidateSkill = async (req, res) => {
+    try {
+        const { skill } = req.body;
+        if (!skill) return res.status(400).json({ message: "Skill is required" });
+
+        const candidate = await Candidate.findByIdAndUpdate(
+            req.params.id,
+            { $addToSet: { skills: skill } },
+            { new: true }
+        );
+
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Remove a skill from a candidate
+// @route   DELETE /api/candidates/:id/skills
+// @access  Private
+export const removeCandidateSkill = async (req, res) => {
+    try {
+        const { skill } = req.body;
+        if (!skill) return res.status(400).json({ message: "Skill is required" });
+
+        const candidate = await Candidate.findByIdAndUpdate(
+            req.params.id,
+            { $pull: { skills: skill } },
+            { new: true }
+        );
+
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Add a technology to a candidate
+// @route   POST /api/candidates/:id/technologies
+// @access  Private
+export const addCandidateTechnology = async (req, res) => {
+    try {
+        const { technology } = req.body;
+        if (!technology) return res.status(400).json({ message: "Technology is required" });
+
+        const candidate = await Candidate.findByIdAndUpdate(
+            req.params.id,
+            { $addToSet: { technologies: technology } },
+            { new: true }
+        );
+
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Remove a technology from a candidate
+// @route   DELETE /api/candidates/:id/technologies
+// @access  Private
+export const removeCandidateTechnology = async (req, res) => {
+    try {
+        const { technology } = req.body;
+        if (!technology) return res.status(400).json({ message: "Technology is required" });
+
+        const candidate = await Candidate.findByIdAndUpdate(
+            req.params.id,
+            { $pull: { technologies: technology } },
+            { new: true }
+        );
+
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });

@@ -8,7 +8,7 @@ const candidateSchema = new mongoose.Schema({
     submissionDate: String,
     role: {
         type: String,
-        enum: ["JR MERN", "SR MERN", "HR", "QA", "DevOps", "Flutter", "UI/UX", "Other"],
+        enum: ["FullStack MERN", "QA", "Flutter", "UI/UX", "Other"],
         default: "Other"
     },
     resumeLink: String,
@@ -22,6 +22,11 @@ const candidateSchema = new mongoose.Schema({
     expectedCTC: String,
     location: String,
     source: { type: String, default: "Direct" },
+    portfolioLink: String,
+    skills: [String],
+    technologies: [String],
+    hasLiveExperience: String,
+    mumbaiComfort: String,
 
     // Status tracking
     status: {

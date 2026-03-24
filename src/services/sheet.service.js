@@ -2,10 +2,10 @@ import axios from "axios";
 import Candidate from "../models/candidates/candidate.model.js";
 import { updateJobStats } from "../utils/jobUtils.js";
 
-export const syncSheetData = async (userId, globalRole = null, sheetId = null) => {
+export const syncSheetData = async (userId) => {
     const RANGE = "Sheet1";
     const API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
-    const SHEET_ID = sheetId || process.env.GOOGLE_SHEET_ID;
+    const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
     if (!API_KEY || !SHEET_ID) {
         throw new Error("Missing Google Sheets configuration: GOOGLE_SHEETS_API_KEY or GOOGLE_SHEET_ID");
@@ -35,26 +35,21 @@ export const syncSheetData = async (userId, globalRole = null, sheetId = null) =
             });
 
             // Identify core fields
-            const email = rowData["Email address"] || rowData["Email"];
-            const name = rowData["Full Name"] || rowData["Name"];
-            const phone = rowData["Phone NO"] || rowData["Phone Number"];
+            const email = String(rowData["Email address"] || rowData["Email"] || "").trim();
+            const name = String(rowData["Full Name"] || rowData["Name"] || "").trim();
+            const phone = String(rowData["Phone NO"] || rowData["Phone Number"] || "").trim();
             const roleInput = rowData["Role"] || rowData["Position"];
 
-            if (!email) continue;
+            if (!email || !name || !phone) continue;
 
-            // Map role - Priority: 1. Global role from parameter, 2. Role from sheet column, 3. Default "Other"
+            // Map role - Priority: 1. Role from sheet column, 2. Default "Other"
             let role = "Other";
-            if (globalRole) {
-                role = globalRole;
-            } else if (roleInput) {
+            if (roleInput) {
                 const ri = roleInput.toUpperCase();
-                if (ri.includes("JR MERN")) role = "JR MERN";
-                else if (ri.includes("SR MERN")) role = "SR MERN";
-                else if (ri.includes("HR")) role = "HR";
+                if (ri.includes("MERN")) role = "FullStack MERN";
                 else if (ri.includes("QA")) role = "QA";
-                else if (ri.includes("DEVOPS")) role = "DevOps";
                 else if (ri.includes("FLUTTER")) role = "Flutter";
-                else if (ri.includes("UI")) role = "UI/UX";
+                else if (ri.includes("UI") || ri.includes("UX")) role = "UI/UX";
             }
 
             // Map detailed fields from headers
@@ -66,6 +61,12 @@ export const syncSheetData = async (userId, globalRole = null, sheetId = null) =
             let expectedCTC = "";
             let location = "";
             let source = "Google Form";
+            let resumeLink = "";
+            let portfolioLink = "";
+            let skills = [];
+            let technologies = [];
+            let hasLiveExperience = "";
+            let mumbaiComfort = "";
 
             Object.keys(rowData).forEach(key => {
                 const k = key.toLowerCase();
@@ -78,6 +79,16 @@ export const syncSheetData = async (userId, globalRole = null, sheetId = null) =
                 else if (k.includes("expected ctc") || k === "expected") expectedCTC = v;
                 else if (k === "location" || k === "current city") location = v;
                 else if (k === "source" || k.includes("how did you hear")) source = v;
+                else if (k.includes("resume")) resumeLink = v;
+                else if (k.includes("portfolio") || k.includes("github")) portfolioLink = v;
+                else if (k.includes("skills")) {
+                    skills = v ? v.split(",").map(s => s.trim()).filter(Boolean) : [];
+                }
+                else if (k.includes("technologies")) {
+                    technologies = v ? v.split(",").map(s => s.trim()).filter(Boolean) : [];
+                }
+                else if (k.includes("live") || k.includes("production")) hasLiveExperience = v;
+                else if (k.includes("comfort") || k.includes("mumbai") || k.includes("office") || k.includes("saturday") || k.includes("monday")) mumbaiComfort = v;
             });
 
             // Map flexible details (exclude the promoted fields)
@@ -87,7 +98,8 @@ export const syncSheetData = async (userId, globalRole = null, sheetId = null) =
                 "TimeStamp", "Timestamp", "Role", "Position", "Candidate Type", "Type",
                 "Total Experience", "Experience", "Work Exp", "Relevant Experience",
                 "Notice Period", "Current CTC", "CTC", "Expected CTC", "Expected",
-                "Location", "Current City", "Source"
+                "Location", "Current City", "Source",
+                "Portfolio", "Github", "Technologies", "Skills", "Live", "Production", "Comfort", "Mumbai", "Office", "Monday", "Saturday"
             ];
 
             Object.keys(rowData).forEach(key => {
@@ -116,6 +128,12 @@ export const syncSheetData = async (userId, globalRole = null, sheetId = null) =
                 expectedCTC,
                 location,
                 source,
+                resumeLink,
+                portfolioLink,
+                skills,
+                technologies,
+                hasLiveExperience,
+                mumbaiComfort,
                 details,
                 submissionDate: rowData["TimeStamp"] || rowData["Timestamp"],
                 status: "New",
@@ -128,16 +146,12 @@ export const syncSheetData = async (userId, globalRole = null, sheetId = null) =
         // Recalculate job stats for all processed roles
         const uniqueRoles = [...new Set(dataRows.map(row => {
             const roleInput = row[headers.indexOf("Role")] || row[headers.indexOf("Position")];
-            if (globalRole) return globalRole;
             if (roleInput) {
                 const ri = roleInput.toUpperCase();
-                if (ri.includes("JR MERN")) return "JR MERN";
-                if (ri.includes("SR MERN")) return "SR MERN";
-                if (ri.includes("HR")) return "HR";
+                if (ri.includes("MERN")) return "FullStack MERN";
                 if (ri.includes("QA")) return "QA";
-                if (ri.includes("DEVOPS")) return "DevOps";
                 if (ri.includes("FLUTTER")) return "Flutter";
-                if (ri.includes("UI")) return "UI/UX";
+                if (ri.includes("UI") || ri.includes("UX")) return "UI/UX";
             }
             return "Other";
         }))];

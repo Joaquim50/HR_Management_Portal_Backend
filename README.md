@@ -87,7 +87,7 @@ This document provides a detailed overview of the available API endpoints, their
 - **Method**: `GET`
 - **Auth**: Required (`candidates.view`)
 - **Query Parameters**:
-  - `role`: Filter by role (e.g., "JR MERN", "HR")
+  - `role`: Filter by role (e.g., "FullStack MERN", "QA", "Flutter", "UI/UX", "Other")
   - `status` or `stage`: Filter by status (e.g., "Pending", "Hired", "Rejected")
   - `type`: "Fresher", "Experienced", "Intern", "Immediate Joiner", "Backup"
   - `noticePeriod`: Filter by notice period
@@ -114,14 +114,7 @@ This document provides a detailed overview of the available API endpoints, their
 - **URL**: `/api/candidates/sync`
 - **Method**: `POST`
 - **Auth**: Required (`candidates.create`)
-- **Body**:
-
-```json
-{
-  "role": "JR MERN", // Optional: force specific role
-  "sheetId": "GSheetID" // Optional: override default
-}
-```
+- **Description**: Synchronizes candidates from the configured Google Sheet. No request body is required as only one sheet is maintained and roles are derived automatically.
 
 ### Bulk Import Excel
 
@@ -130,7 +123,7 @@ This document provides a detailed overview of the available API endpoints, their
 - **Auth**: Required (`candidates.create`)
 - **Body**: `multipart/form-data`
   - `file`: .xlsx or .csv file
-  - `role`: Optional global role
+- **Description**: Imports candidates from an Excel file. Roles and special fields (skills, technologies, etc.) are extracted automatically from the sheet columns.
 
 ### Update Candidate Status
 
@@ -157,6 +150,32 @@ This document provides a detailed overview of the available API endpoints, their
 ```json
 {
   "tag": "Expert"
+}
+```
+
+#### Add/Remove Skill
+
+- **URL**: `/api/candidates/:id/skills`
+- **Method**: `POST` / `DELETE`
+- **Auth**: Required (`candidates.update`)
+- **Body**:
+
+```json
+{
+  "skill": "React"
+}
+```
+
+#### Add/Remove Technology
+
+- **URL**: `/api/candidates/:id/technologies`
+- **Method**: `POST` / `DELETE`
+- **Auth**: Required (`candidates.update`)
+- **Body**:
+
+```json
+{
+  "technology": "Node.js"
 }
 ```
 
