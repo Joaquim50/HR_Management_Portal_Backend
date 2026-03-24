@@ -339,8 +339,16 @@ export const createCandidate = async (req, res) => {
             location: location || "",
             source: source || "Direct",
             portfolioLink: portfolioLink || "",
-            skills: Array.isArray(skills) ? skills : (skills ? String(skills).split(",").map(s => s.trim()).filter(Boolean) : []),
-            technologies: Array.isArray(technologies) ? technologies : (technologies ? String(technologies).split(",").map(s => s.trim()).filter(Boolean) : []),
+            skills: (() => {
+                if (Array.isArray(skills)) return skills;
+                if (!skills) return [];
+                try { const p = JSON.parse(skills); return Array.isArray(p) ? p : [p]; } catch { return String(skills).split(",").map(s => s.trim()).filter(Boolean); }
+            })(),
+            technologies: (() => {
+                if (Array.isArray(technologies)) return technologies;
+                if (!technologies) return [];
+                try { const p = JSON.parse(technologies); return Array.isArray(p) ? p : [p]; } catch { return String(technologies).split(",").map(s => s.trim()).filter(Boolean); }
+            })(),
             hasLiveExperience: hasLiveExperience || "",
             mumbaiComfort: mumbaiComfort || "",
             submissionDate: new Date().toISOString(),
