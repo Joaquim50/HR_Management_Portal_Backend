@@ -146,6 +146,34 @@ This document provides a detailed overview of the available API endpoints, their
 - **Body**: `multipart/form-data`
   - `resume`: File containing the new resume. Existing resumes on the server will automatically be deleted to prevent orphans.
 
+### Email Templates
+
+#### Get All Templates
+- **URL**: `/api/email-templates`
+- **Method**: `GET`
+- **Auth**: Required
+- **Description**: Returns all seeded email templates (rejection, offer, joining).
+
+#### Get Template by Type
+- **URL**: `/api/email-templates/:type`
+- **Method**: `GET`
+- **Auth**: Required
+- **Description**: Returns a specific template (e.g., `/rejection`, `/offer`, `/joining`).
+
+#### Update Template
+- **URL**: `/api/email-templates/:type`
+- **Method**: `PUT`
+- **Auth**: Required
+- **Body**:
+```json
+{
+  "subject": "New Subject",
+  "body": "New Body content with {{placeholders}}",
+  "placeholders": ["{{candidate_name}}", "{{role}}"]
+}
+```
+- **Description**: Updates the subject and body of a template.
+
 ### Manual Data (Tags, Skills & Feedback)
 
 #### Add/Remove Tag
