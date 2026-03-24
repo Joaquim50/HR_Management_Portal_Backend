@@ -138,7 +138,15 @@ This document provides a detailed overview of the available API endpoints, their
 }
 ```
 
-### Manual Data (Tags & Feedback)
+### Upload Candidate Resume
+
+- **URL**: `/api/candidates/:id/resume`
+- **Method**: `POST`
+- **Auth**: Required (`candidates.update`)
+- **Body**: `multipart/form-data`
+  - `resume`: File containing the new resume. Existing resumes on the server will automatically be deleted to prevent orphans.
+
+### Manual Data (Tags, Skills & Feedback)
 
 #### Add/Remove Tag
 

@@ -14,7 +14,8 @@ import {
     removeCandidateSkill,
     addCandidateTechnology,
     removeCandidateTechnology,
-    saveCandidateFeedback
+    saveCandidateFeedback,
+    uploadCandidateResume
 } from "../../controllers/candidates/candidate.controller.js";
 import { protect, authorize } from "../../middlewares/auth.middleware.js";
 import upload from "../../middlewares/upload.middleware.js";
@@ -41,5 +42,6 @@ router.delete("/:id/skills", protect, authorize("candidates", "update"), removeC
 router.post("/:id/technologies", protect, authorize("candidates", "update"), addCandidateTechnology);
 router.delete("/:id/technologies", protect, authorize("candidates", "update"), removeCandidateTechnology);
 router.post("/:id/feedback", protect, authorize("candidates", "update"), saveCandidateFeedback);
+router.post("/:id/resume", protect, authorize("candidates", "update"), upload.single("resume"), uploadCandidateResume);
 
 export default router;

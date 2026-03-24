@@ -671,3 +671,37 @@ export const removeCandidateTechnology = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// @desc    Upload candidate resume separately
+// @route   POST /api/candidates/:id/resume
+// @access  Private
+export const uploadCandidateResume = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: "Please upload a resume file" });
+        }
+
+        const candidate = await Candidate.findById(req.params.id);
+        if (!candidate) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ message: "Candidate not found" });
+        }
+
+        // Delete old resume if exists
+        if (candidate.resumeLink && candidate.resumeLink.startsWith("uploads")) {
+            try {
+                if (fs.existsSync(candidate.resumeLink)) fs.unlinkSync(candidate.resumeLink);
+            } catch (err) {
+                console.error("Error deleting old resume:", err.message);
+            }
+        }
+
+        candidate.resumeLink = req.file.path.replace(/\\/g, "/");
+        await candidate.save();
+
+        res.json({ message: "Resume uploaded successfully", resumeLink: candidate.resumeLink });
+    } catch (error) {
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        res.status(500).json({ error: error.message });
+    }
+};
