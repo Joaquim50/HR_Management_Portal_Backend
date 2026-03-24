@@ -6,6 +6,7 @@ import {
     getCandidateById,
     createCandidate,
     updateCandidateStatus,
+    updateCandidate,
     deleteCandidate,
     addCandidateTag,
     removeCandidateTag,
@@ -24,6 +25,7 @@ router.post("/import", protect, authorize("candidates", "create"), upload.single
 router.get("/", protect, authorize("candidates", "view"), getCandidates);
 router.get("/:id", protect, authorize("candidates", "view"), getCandidateById);
 router.post("/", protect, authorize("candidates", "create"), upload.single("resume"), createCandidate);
+router.put("/:id", protect, authorize("candidates", "update"), updateCandidate);
 router.patch("/:id/status", protect, authorize("candidates", "update"), updateCandidateStatus);
 router.delete("/:id", protect, authorize("candidates", "delete"), deleteCandidate);
 

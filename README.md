@@ -11,9 +11,11 @@ This document provides a detailed overview of the available API endpoints, their
 ## Authentication
 
 ### Register User
+
 - **URL**: `/api/auth/register`
 - **Method**: `POST`
 - **Body**:
+
 ```json
 {
   "name": "Full Name",
@@ -22,41 +24,51 @@ This document provides a detailed overview of the available API endpoints, their
   "role": "staff" // "superadmin" or "staff"
 }
 ```
+
 - **Response**: Returns both tokens.
 
 ### Login
+
 - **URL**: `/api/auth/login`
 - **Method**: `POST`
 - **Body**:
+
 ```json
 {
   "email": "user@example.com",
   "password": "password123"
 }
 ```
+
 - **Response**: Returns `accessToken` (short-lived) and `refreshToken` (long-lived).
 
 ### Refresh Token
+
 - **URL**: `/api/auth/refresh`
 - **Method**: `POST`
 - **Body**:
+
 ```json
 {
   "token": "your_refresh_token"
 }
 ```
+
 - **Response**: Returns a new `accessToken`.
 
 ### Logout
+
 - **URL**: `/api/auth/logout`
 - **Method**: `POST`
 - **Auth**: Required
 - **Body**:
+
 ```json
 {
   "token": "your_refresh_token"
 }
 ```
+
 - **Description**: Removes the specific refresh token from the database.
 
 ### Get Current User Profile
@@ -164,6 +176,38 @@ This document provides a detailed overview of the available API endpoints, their
 ```
 
 ---
+
+## Dashboard
+
+### Get Dashboard Data
+
+- **URL**: `/api/dashboard`
+- **Method**: `GET`
+- **Auth**: Required (`dashboard.view`)
+- **Response**:
+
+```json
+{
+  "stats": {
+    "totalCandidates": 10,
+    "screeningPending": 3,
+    "technicalPending": 3,
+    "offersReleased": 1,
+    "joined": 0,
+    "rejected": 1
+  },
+  "hiringProgress": [
+    {
+      "role": "Senior Frontend Developer",
+      "required": 3,
+      "hired": 1,
+      "progress": 33
+    }
+  ],
+  "upcomingInterviews": [],
+  "recentActivity": []
+}
+```
 
 ## Job Openings Module
 

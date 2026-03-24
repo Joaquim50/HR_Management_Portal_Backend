@@ -7,6 +7,7 @@ import candidateRoutes from "./src/routes/candidates/candidate.routes.js";
 import userRoutes from "./src/routes/users/user.routes.js";
 import jobOpeningRoutes from "./src/routes/jobs/jobOpening.routes.js";
 import interviewRoutes from "./src/routes/interviews/interview.routes.js";
+import dashboardRoutes from "./src/routes/dashboard/dashboard.routes.js";
 import path from "path";
 
 dotenv.config();
@@ -26,6 +27,7 @@ app.use("/api/candidates", candidateRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/jobs", jobOpeningRoutes);
 app.use("/api/interviews", interviewRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 app.get("/", (req, res) => {
     res.send("API Running");

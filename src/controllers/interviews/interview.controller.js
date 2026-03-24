@@ -1,5 +1,6 @@
 import Interview from "../../models/interviews/interview.model.js";
 import Candidate from "../../models/candidates/candidate.model.js";
+import Activity from "../../models/dashboard/activity.model.js";
 
 // @desc    Schedule a new interview
 // @route   POST /api/interviews
@@ -19,17 +20,25 @@ export const scheduleInterview = async (req, res) => {
             type
         });
 
-        // Automatically update candidate status to "Interviewing"
-        await Candidate.findByIdAndUpdate(candidate, {
-            status: "Interviewing",
+        // Automatically update candidate status based on interview type
+        const updatedCandidate = await Candidate.findByIdAndUpdate(candidate, {
+            status: type, // Ensure 'type' matches "Screening", "Technical", or "Offer"
             $push: {
                 statusHistory: {
-                    status: "Interviewing",
+                    status: type,
                     changedAt: new Date(),
                     changedBy: req.user._id,
                     notes: `Interview scheduled for ${new Date(scheduledAt).toLocaleString()}`
                 }
             }
+        }, { new: true });
+
+        // Log Activity
+        await Activity.create({
+            content: `Interview scheduled for ${updatedCandidate.name} (${type})`,
+            type: "interview_scheduled",
+            candidate: candidate,
+            user: req.user.id
         });
 
         res.status(201).json(interview);

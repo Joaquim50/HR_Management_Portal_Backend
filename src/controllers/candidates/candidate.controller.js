@@ -3,6 +3,7 @@ import fs from "fs";
 import * as sheetService from "../../services/sheet.service.js";
 import Candidate from "../../models/candidates/candidate.model.js";
 import { updateJobStats } from "../../utils/jobUtils.js";
+import Activity from "../../models/dashboard/activity.model.js";
 
 // @desc    Sync candidates from Google Sheets
 // @route   POST /api/candidates/sync
@@ -58,21 +59,41 @@ export const bulkImportExcel = async (req, res) => {
                 else if (ri.includes("DEVOPS")) role = "DevOps";
             }
 
-            // Extract experience based on keywords
-            let experience = "0";
+            // Map detailed fields from row
+            let candidateType = "Other";
+            let totalExperience = "";
+            let relevantExperience = "";
+            let noticePeriod = "";
+            let currentCTC = "";
+            let expectedCTC = "";
+            let location = "";
+            let source = "Excel Import";
+
             Object.keys(row).forEach(key => {
-                const k = key.toLowerCase();
-                if (k.includes("experience") || k.includes("work exp") || k.includes("years of")) {
-                    if (experience === "0" || !experience) {
-                        experience = String(row[key]);
-                    }
-                }
+                const k = key.toLowerCase().trim();
+                const v = String(row[key]);
+                if (k.includes("candidate type") || k === "type") candidateType = v;
+                else if (k === "total experience" || k === "experience" || k === "work exp") totalExperience = v;
+                else if (k.includes("relevant experience")) relevantExperience = v;
+                else if (k.includes("notice period")) noticePeriod = v;
+                else if (k.includes("current ctc") || k === "ctc") currentCTC = v;
+                else if (k.includes("expected ctc") || k === "expected") expectedCTC = v;
+                else if (k === "location" || k === "current city") location = v;
+                else if (k === "source" || k.includes("how did you hear")) source = v;
             });
 
             const details = {};
+            const coreFields = [
+                "Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number", 
+                "Role", "Position", "Candidate Type", "Type",
+                "Total Experience", "Experience", "Work Exp", "Relevant Experience",
+                "Notice Period", "Current CTC", "CTC", "Expected CTC", "Expected",
+                "Location", "Current City", "Source", "Submission Date", "Timestamp"
+            ];
+
             Object.keys(row).forEach(key => {
                 const k = key.trim();
-                if (!["Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number", "Role", "Position"].includes(k)) {
+                if (!coreFields.some(f => k.toLowerCase().includes(f.toLowerCase()))) {
                     const cleanKey = k.replace(/\./g, "_");
                     details[cleanKey] = row[key];
                 }
@@ -90,11 +111,18 @@ export const bulkImportExcel = async (req, res) => {
                 email,
                 phone,
                 role,
-                experience,
+                candidateType,
+                totalExperience,
+                relevantExperience,
+                noticePeriod,
+                currentCTC,
+                expectedCTC,
+                location,
+                source,
                 details,
                 submissionDate: row["Submission Date"] || row["Timestamp"] || new Date().toISOString(),
-                status: "Pending",
-                statusHistory: [{ status: "Pending", changedAt: new Date(), changedBy: req.user._id }]
+                status: "New",
+                statusHistory: [{ status: "New", changedAt: new Date(), changedBy: req.user._id }]
             });
             await candidate.save();
             createdCount++;
@@ -120,17 +148,17 @@ export const bulkImportExcel = async (req, res) => {
 // @access  Private
 export const getCandidates = async (req, res) => {
     try {
-        const { 
-            role, 
-            status, 
+        const {
+            role,
+            status,
             stage, // Alias for status
             type, // Intern, Fresher, Experienced, etc.
-            noticePeriod, 
-            sortBy = "createdAt", 
-            order = "desc", 
-            page = 1, 
-            limit = 10, 
-            search 
+            noticePeriod,
+            sortBy = "createdAt",
+            order = "desc",
+            page = 1,
+            limit = 10,
+            search
         } = req.query;
 
         const query = {};
@@ -148,18 +176,31 @@ export const getCandidates = async (req, res) => {
         }
 
         // Candidate Type Filter (Fresher, Experienced, Intern, Immediate Joiner, Backup)
-        if (type && type !== "All") {
+        if (type && type !== "All" && type !== "All Types") {
+            const typeCriteria = [];
+            
+            // 1. Check candidateType field (exact match after mapping)
+            typeCriteria.push({ candidateType: type });
+
+            // 2. Check tags (exact or partial)
+            typeCriteria.push({ tags: type });
+
+            // 3. Fallback to behavioral patterns (backward compatibility)
             if (type === "Fresher") {
-                query.experience = { $regex: /^0/, $options: "i" };
+                typeCriteria.push({ totalExperience: { $regex: /^0/, $options: "i" } });
+                typeCriteria.push({ relevantExperience: { $regex: /^0/, $options: "i" } });
             } else if (type === "Experienced") {
-                query.experience = { $ne: "0", $exists: true };
+                typeCriteria.push({ totalExperience: { $ne: "0", $exists: true } });
             } else if (type === "Immediate Joiner") {
-                query["details.Notice Period"] = { $regex: /Immediate/i };
+                typeCriteria.push({ noticePeriod: { $regex: /Immediate/i } });
             } else if (type === "Intern") {
-                query.role = { $regex: /Intern/i };
+                typeCriteria.push({ role: { $regex: /Intern/i } });
             } else if (type === "Backup") {
-                query.status = "Backup";
+                typeCriteria.push({ status: "Backup" });
             }
+
+            // Apply as $or
+            query.$or = query.$or ? [...query.$or, { $or: typeCriteria }] : [{ $or: typeCriteria }];
         }
 
         // Notice Period Filter
@@ -176,7 +217,11 @@ export const getCandidates = async (req, res) => {
                 { email: { $regex: safeSearch, $options: "i" } },
                 { phone: { $regex: safeSearch, $options: "i" } },
                 { status: { $regex: safeSearch, $options: "i" } },
-                { role: { $regex: safeSearch, $options: "i" } }
+                { role: { $regex: safeSearch, $options: "i" } },
+                { tags: { $regex: safeSearch, $options: "i" } },
+                { candidateType: { $regex: safeSearch, $options: "i" } },
+                { location: { $regex: safeSearch, $options: "i" } },
+                { source: { $regex: safeSearch, $options: "i" } }
             ];
         }
 
@@ -188,7 +233,8 @@ export const getCandidates = async (req, res) => {
         const candidates = await Candidate.find(query)
             .sort(sortOptions)
             .skip(skip)
-            .limit(parseInt(limit));
+            .limit(parseInt(limit))
+            .populate("feedbacks.interviewer", "name");
 
         res.json({
             candidates,
@@ -224,48 +270,75 @@ export const getCandidateById = async (req, res) => {
 // @access  Private
 export const createCandidate = async (req, res) => {
     try {
-        const { name, email, phone, role, timestamp, ...rest } = req.body || {};
-        const candidateExists = await Candidate.findOne({ email });
+        const { 
+            name, email, phone, role, 
+            candidateType, totalExperience, relevantExperience,
+            noticePeriod, currentCTC, expectedCTC, location,
+            source = "Direct",
+            status, stage, ...rest 
+        } = req.body;
 
-        if (candidateExists) {
+        // Check if candidate already exists
+        const existingCandidate = await Candidate.findOne({ email });
+        if (existingCandidate) {
             if (req.file) fs.unlinkSync(req.file.path);
-            return res.status(400).json({ message: "Candidate already exists" });
+            return res.status(400).json({ message: "Candidate with this email already exists" });
         }
 
-        // Put all other fields into details
-        const details = new Map();
+        // Collect remaining fields into details
+        const details = {};
+        const coreFields = [
+            "name", "email", "phone", "role", "candidateType", 
+            "totalExperience", "relevantExperience", "noticePeriod", 
+            "currentCTC", "expectedCTC", "location", "source", 
+            "status", "stage", "resumeLink", "details"
+        ];
 
-        // Collect from top-level 'rest' fields
         Object.keys(rest).forEach(key => {
-            if (!["status", "statusHistory", "interview", "submissionDate", "resumeLink", "source", "details"].includes(key)) {
-                details.set(key, rest[key]);
+            if (!coreFields.includes(key)) {
+                details[key] = rest[key];
             }
         });
 
-        // If 'details' object was explicitly provided, merge its contents
-        if (req.body.details && typeof req.body.details === 'object' && !(req.body.details instanceof Array)) {
-            Object.keys(req.body.details).forEach(key => {
-                details.set(key, req.body.details[key]);
-            });
+        // If an explicit details object was passed, merge it
+        if (req.body.details && typeof req.body.details === "object") {
+            Object.assign(details, req.body.details);
         }
 
         const candidate = new Candidate({
             name,
             email,
-            phone,
+            phone: phone || "",
             role: role || "Other",
-            submissionDate: timestamp || req.body.submissionDate || new Date().toISOString(),
+            candidateType: candidateType || "Other",
+            totalExperience: totalExperience || "",
+            relevantExperience: relevantExperience || "",
+            noticePeriod: noticePeriod || "",
+            currentCTC: currentCTC || "",
+            expectedCTC: expectedCTC || "",
+            location: location || "",
+            source: source || "Direct",
+            submissionDate: new Date().toISOString(),
             resumeLink: req.file ? req.file.path : (req.body.resumeLink || ""),
             details,
-            status: req.body.status || "Pending",
+            status: status || stage || "New",
             statusHistory: [{
-                status: req.body.status || "Pending",
+                status: status || stage || "New",
                 changedAt: new Date(),
                 changedBy: req.user._id
             }]
         });
 
         await candidate.save();
+
+        // Log Activity
+        await Activity.create({
+            content: `New candidate added: ${name}`,
+            type: "new_candidate",
+            candidate: candidate._id,
+            user: req.user.id
+        });
+
         res.status(201).json(candidate);
     } catch (error) {
         if (req.file) fs.unlinkSync(req.file.path);
@@ -303,7 +376,7 @@ export const updateCandidateStatus = async (req, res) => {
                     console.error("Error deleting resume file:", err.message);
                 }
             }
-            
+
             const oldRole = candidate.role; // Store old role before updating status
             candidate.status = status; // Update status after old role is captured
             await candidate.save();
@@ -315,6 +388,14 @@ export const updateCandidateStatus = async (req, res) => {
             if (candidate.role && candidate.role !== oldRole) {
                 await updateJobStats(candidate.role);
             }
+
+            // Log Activity
+            await Activity.create({
+                content: `${candidate.name} moved to ${status} round`,
+                type: status === "Joined" ? "hired" : status === "Rejected" ? "rejected" : "status_change",
+                candidate: candidate._id,
+                user: req.user.id
+            });
         }
 
         res.json(candidate);
@@ -423,6 +504,46 @@ export const saveCandidateFeedback = async (req, res) => {
         }
 
         await candidate.save();
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Update candidate generic
+// @route   PUT /api/candidates/:id
+// @access  Private
+export const updateCandidate = async (req, res) => {
+    try {
+        const oldCandidate = await Candidate.findById(req.params.id);
+        if (!oldCandidate) {
+            return res.status(404).json({ message: "Candidate not found" });
+        }
+
+        const candidate = await Candidate.findByIdAndUpdate(
+            req.params.id,
+            { $set: req.body },
+            { new: true, runValidators: true }
+        );
+
+        // Log Activity if status changed
+        if (req.body.status && req.body.status !== oldCandidate.status) {
+            await Activity.create({
+                content: `${candidate.name} moved to ${req.body.status} round`,
+                type: req.body.status === "Joined" ? "hired" : req.body.status === "Rejected" ? "rejected" : "status_change",
+                candidate: candidate._id,
+                user: req.user.id
+            });
+
+            // Update status history
+            candidate.statusHistory.push({
+                status: req.body.status,
+                changedAt: new Date(),
+                changedBy: req.user._id
+            });
+            await candidate.save();
+        }
+
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });

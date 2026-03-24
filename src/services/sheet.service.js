@@ -57,21 +57,41 @@ export const syncSheetData = async (userId, globalRole = null, sheetId = null) =
                 else if (ri.includes("UI")) role = "UI/UX";
             }
 
-            // Extract experience based on keywords in headers
-            let experience = "0";
+            // Map detailed fields from headers
+            let candidateType = "Other";
+            let totalExperience = "";
+            let relevantExperience = "";
+            let noticePeriod = "";
+            let currentCTC = "";
+            let expectedCTC = "";
+            let location = "";
+            let source = "Google Form";
+
             Object.keys(rowData).forEach(key => {
                 const k = key.toLowerCase();
-                if (k.includes("experience") || k.includes("work exp") || k.includes("years of")) {
-                    if (experience === "0" || !experience) { // Take the first meaningful one
-                        experience = rowData[key];
-                    }
-                }
+                const v = rowData[key];
+                if (k.includes("candidate type") || k.includes("type")) candidateType = v;
+                else if (k === "total experience" || k === "experience" || k === "work exp") totalExperience = v;
+                else if (k.includes("relevant experience")) relevantExperience = v;
+                else if (k.includes("notice period")) noticePeriod = v;
+                else if (k.includes("current ctc") || k === "ctc") currentCTC = v;
+                else if (k.includes("expected ctc") || k === "expected") expectedCTC = v;
+                else if (k === "location" || k === "current city") location = v;
+                else if (k === "source" || k.includes("how did you hear")) source = v;
             });
 
-            // Map flexible details
+            // Map flexible details (exclude the promoted fields)
             const details = {};
+            const coreFields = [
+                "Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number", 
+                "TimeStamp", "Timestamp", "Role", "Position", "Candidate Type", "Type",
+                "Total Experience", "Experience", "Work Exp", "Relevant Experience",
+                "Notice Period", "Current CTC", "CTC", "Expected CTC", "Expected",
+                "Location", "Current City", "Source"
+            ];
+
             Object.keys(rowData).forEach(key => {
-                if (!["Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number", "TimeStamp", "Timestamp", "Role", "Position"].includes(key)) {
+                if (!coreFields.some(f => key.toLowerCase().includes(f.toLowerCase()))) {
                     details[key] = rowData[key];
                 }
             });
@@ -88,11 +108,18 @@ export const syncSheetData = async (userId, globalRole = null, sheetId = null) =
                 email,
                 phone,
                 role,
-                experience,
+                candidateType,
+                totalExperience,
+                relevantExperience,
+                noticePeriod,
+                currentCTC,
+                expectedCTC,
+                location,
+                source,
                 details,
                 submissionDate: rowData["TimeStamp"] || rowData["Timestamp"],
-                status: "Pending",
-                statusHistory: [{ status: "Pending", changedAt: new Date(), changedBy: userId }]
+                status: "New",
+                statusHistory: [{ status: "New", changedAt: new Date(), changedBy: userId }]
             });
             await candidate.save();
             createdCount++;
