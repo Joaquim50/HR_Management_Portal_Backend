@@ -77,7 +77,36 @@ const candidateSchema = new mongoose.Schema({
     details: {
         type: Map,
         of: mongoose.Schema.Types.Mixed
-    }
+    },
+    screeningHistory: [
+        {
+            date: String,
+            notes: String,
+            by: String
+        }
+    ],
+    technicalHistory: [
+        {
+            date: String,
+            notes: String,
+            rating: Number,
+            by: String
+        }
+    ],
+    offerHistory: [
+        {
+            date: String,
+            notes: String,
+            by: String
+        }
+    ],
+    activityLog: [
+        {
+            date: String,
+            action: String,
+            by: String
+        }
+    ]
 }, { timestamps: true });
 
 export default mongoose.model("Candidate", candidateSchema);

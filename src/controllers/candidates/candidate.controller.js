@@ -429,6 +429,14 @@ export const updateCandidateStatus = async (req, res) => {
                 candidate: candidate._id,
                 user: req.user.id
             });
+
+            // Add to candidate's own activity log
+            candidate.activityLog.push({
+                date: new Date().toISOString().split("T")[0],
+                action: `Moved to ${status} stage`,
+                by: req.user.name || "System"
+            });
+            await candidate.save();
         }
 
         res.json(candidate);
@@ -473,13 +481,19 @@ export const addCandidateTag = async (req, res) => {
         const { tag } = req.body;
         if (!tag) return res.status(400).json({ message: "Tag is required" });
 
-        const candidate = await Candidate.findByIdAndUpdate(
-            req.params.id,
-            { $addToSet: { tags: tag } },
-            { new: true }
-        );
-
+        const candidate = await Candidate.findById(req.params.id);
         if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        if (!candidate.tags.includes(tag)) {
+            candidate.tags.push(tag);
+            candidate.activityLog.push({
+                date: new Date().toISOString().split("T")[0],
+                action: `Tag "${tag}" added`,
+                by: req.user.name || "System"
+            });
+            await candidate.save();
+        }
+
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -494,13 +508,17 @@ export const removeCandidateTag = async (req, res) => {
         const { tag } = req.body;
         if (!tag) return res.status(400).json({ message: "Tag is required" });
 
-        const candidate = await Candidate.findByIdAndUpdate(
-            req.params.id,
-            { $pull: { tags: tag } },
-            { new: true }
-        );
-
+        const candidate = await Candidate.findById(req.params.id);
         if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        candidate.tags = candidate.tags.filter(t => t !== tag);
+        candidate.activityLog.push({
+            date: new Date().toISOString().split("T")[0],
+            action: `Tag "${tag}" removed`,
+            by: req.user.name || "System"
+        });
+        await candidate.save();
+
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -535,6 +553,29 @@ export const saveCandidateFeedback = async (req, res) => {
         } else {
             candidate.feedbacks.push(feedbackData);
         }
+
+        // Sync with stage-specific history fields
+        const historyEntry = {
+            date: new Date().toISOString().split("T")[0],
+            notes: comments,
+            rating: Number(rating),
+            by: req.user.name || "Interviewer"
+        };
+
+        if (stage === "Screening") {
+            candidate.screeningHistory.push(historyEntry);
+        } else if (stage === "Technical") {
+            candidate.technicalHistory.push(historyEntry);
+        } else if (stage === "Offer") {
+            candidate.offerHistory.push(historyEntry);
+        }
+
+        // Log to activity log
+        candidate.activityLog.push({
+            date: new Date().toISOString().split("T")[0],
+            action: `${stage} feedback added`,
+            by: req.user.name || "Interviewer"
+        });
 
         await candidate.save();
         res.json(candidate);
@@ -604,13 +645,19 @@ export const addCandidateSkill = async (req, res) => {
         const { skill } = req.body;
         if (!skill) return res.status(400).json({ message: "Skill is required" });
 
-        const candidate = await Candidate.findByIdAndUpdate(
-            req.params.id,
-            { $addToSet: { skills: skill } },
-            { new: true }
-        );
-
+        const candidate = await Candidate.findById(req.params.id);
         if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        if (!candidate.skills.includes(skill)) {
+            candidate.skills.push(skill);
+            candidate.activityLog.push({
+                date: new Date().toISOString().split("T")[0],
+                action: `Skill "${skill}" added`,
+                by: req.user.name || "System"
+            });
+            await candidate.save();
+        }
+
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -625,13 +672,17 @@ export const removeCandidateSkill = async (req, res) => {
         const { skill } = req.body;
         if (!skill) return res.status(400).json({ message: "Skill is required" });
 
-        const candidate = await Candidate.findByIdAndUpdate(
-            req.params.id,
-            { $pull: { skills: skill } },
-            { new: true }
-        );
-
+        const candidate = await Candidate.findById(req.params.id);
         if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        candidate.skills = candidate.skills.filter(s => s !== skill);
+        candidate.activityLog.push({
+            date: new Date().toISOString().split("T")[0],
+            action: `Skill "${skill}" removed`,
+            by: req.user.name || "System"
+        });
+        await candidate.save();
+
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -646,13 +697,19 @@ export const addCandidateTechnology = async (req, res) => {
         const { technology } = req.body;
         if (!technology) return res.status(400).json({ message: "Technology is required" });
 
-        const candidate = await Candidate.findByIdAndUpdate(
-            req.params.id,
-            { $addToSet: { technologies: technology } },
-            { new: true }
-        );
-
+        const candidate = await Candidate.findById(req.params.id);
         if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        if (!candidate.technologies.includes(technology)) {
+            candidate.technologies.push(technology);
+            candidate.activityLog.push({
+                date: new Date().toISOString().split("T")[0],
+                action: `Technology "${technology}" added`,
+                by: req.user.name || "System"
+            });
+            await candidate.save();
+        }
+
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -667,13 +724,17 @@ export const removeCandidateTechnology = async (req, res) => {
         const { technology } = req.body;
         if (!technology) return res.status(400).json({ message: "Technology is required" });
 
-        const candidate = await Candidate.findByIdAndUpdate(
-            req.params.id,
-            { $pull: { technologies: technology } },
-            { new: true }
-        );
-
+        const candidate = await Candidate.findById(req.params.id);
         if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        candidate.technologies = candidate.technologies.filter(t => t !== technology);
+        candidate.activityLog.push({
+            date: new Date().toISOString().split("T")[0],
+            action: `Technology "${technology}" removed`,
+            by: req.user.name || "System"
+        });
+        await candidate.save();
+
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -705,6 +766,11 @@ export const uploadCandidateResume = async (req, res) => {
         }
 
         candidate.resumeLink = req.file.path.replace(/\\/g, "/");
+        candidate.activityLog.push({
+            date: new Date().toISOString().split("T")[0],
+            action: "Resume updated",
+            by: req.user.name || "System"
+        });
         await candidate.save();
 
         res.json({ message: "Resume uploaded successfully", resumeLink: candidate.resumeLink });
