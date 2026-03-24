@@ -14,6 +14,13 @@ import path from "path";
 dotenv.config();
 const __dirname = path.resolve();
 
+// Ensure uploads directory exists
+import fs from "fs";
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const app = express();
 
 // Connect DataBase
