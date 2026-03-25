@@ -8,10 +8,18 @@ import userRoutes from "./src/routes/users/user.routes.js";
 import jobOpeningRoutes from "./src/routes/jobs/jobOpening.routes.js";
 import interviewRoutes from "./src/routes/interviews/interview.routes.js";
 import dashboardRoutes from "./src/routes/dashboard/dashboard.routes.js";
+import emailTemplateRoutes from "./src/routes/emailTemplates/emailTemplate.routes.js";
 import path from "path";
 
 dotenv.config();
 const __dirname = path.resolve();
+
+// Ensure uploads directory exists
+import fs from "fs";
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 const app = express();
 
@@ -28,6 +36,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/jobs", jobOpeningRoutes);
 app.use("/api/interviews", interviewRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/email-templates", emailTemplateRoutes);
 
 app.get("/", (req, res) => {
     res.send("API Running");

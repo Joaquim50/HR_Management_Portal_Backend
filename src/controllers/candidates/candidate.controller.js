@@ -4,14 +4,14 @@ import * as sheetService from "../../services/sheet.service.js";
 import Candidate from "../../models/candidates/candidate.model.js";
 import { updateJobStats } from "../../utils/jobUtils.js";
 import Activity from "../../models/dashboard/activity.model.js";
+import { sendCandidateEmail } from "../../services/email.service.js";
 
 // @desc    Sync candidates from Google Sheets
 // @route   POST /api/candidates/sync
 // @access  Private (Superadmin only)
 export const syncCandidates = async (req, res) => {
     try {
-        const { role, sheetId } = req.body;
-        const result = await sheetService.syncSheetData(req.user._id, role, sheetId);
+        const result = await sheetService.syncSheetData(req.user._id);
         res.json({ message: "Sync completed successfully", data: result });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -32,31 +32,28 @@ export const bulkImportExcel = async (req, res) => {
         const sheet = workbook.Sheets[sheetName];
         const data = xlsx.utils.sheet_to_json(sheet);
 
-        const globalRole = req.body.role; // Role sent via multipart form field
 
         let createdCount = 0;
         let updatedCount = 0;
         let skippedCount = 0;
 
         for (const row of data) {
-            const email = row["Email address"] || row["Email"];
-            if (!email) continue;
+            const email = String(row["Email address"] || row["Email"] || "").trim();
+            const name = String(row["Full Name"] || row["Name"] || "").trim();
+            const phone = String(row["Phone NO"] || row["Phone Number"] || "").trim();
 
-            const name = row["Full Name"] || row["Name"];
-            const phone = row["Phone NO"] || row["Phone Number"];
+            if (!email || !name || !phone) continue;
+
             const roleInput = row["Role"] || row["Position"];
 
-            // Priority: 1. Global role from body, 2. Role from Excel column, 3. Default "Other"
+            // Priority: 1. Role from Excel column, 2. Default "Other"
             let role = "Other";
-            if (globalRole) {
-                role = globalRole;
-            } else if (roleInput) {
+            if (roleInput) {
                 const ri = roleInput.toUpperCase();
-                if (ri.includes("JR MERN")) role = "JR MERN";
-                else if (ri.includes("SR MERN")) role = "SR MERN";
-                else if (ri.includes("HR")) role = "HR";
+                if (ri.includes("MERN")) role = "FullStack MERN";
                 else if (ri.includes("QA")) role = "QA";
-                else if (ri.includes("DEVOPS")) role = "DevOps";
+                else if (ri.includes("FLUTTER")) role = "Flutter";
+                else if (ri.includes("UI") || ri.includes("UX")) role = "UI/UX";
             }
 
             // Map detailed fields from row
@@ -68,6 +65,12 @@ export const bulkImportExcel = async (req, res) => {
             let expectedCTC = "";
             let location = "";
             let source = "Excel Import";
+            let resumeLink = "";
+            let portfolioLink = "";
+            let skills = [];
+            let technologies = [];
+            let hasLiveExperience = "";
+            let mumbaiComfort = "";
 
             Object.keys(row).forEach(key => {
                 const k = key.toLowerCase().trim();
@@ -80,15 +83,26 @@ export const bulkImportExcel = async (req, res) => {
                 else if (k.includes("expected ctc") || k === "expected") expectedCTC = v;
                 else if (k === "location" || k === "current city") location = v;
                 else if (k === "source" || k.includes("how did you hear")) source = v;
+                else if (k.includes("resume")) resumeLink = v;
+                else if (k.includes("portfolio") || k.includes("github")) portfolioLink = v;
+                else if (k.includes("skills")) {
+                    skills = v ? v.split(",").map(s => s.trim()).filter(Boolean) : [];
+                }
+                else if (k.includes("technologies")) {
+                    technologies = v ? v.split(",").map(s => s.trim()).filter(Boolean) : [];
+                }
+                else if (k.includes("live") || k.includes("production")) hasLiveExperience = v;
+                else if (k.includes("comfort") || k.includes("mumbai") || k.includes("office") || k.includes("saturday") || k.includes("monday")) mumbaiComfort = v;
             });
 
             const details = {};
             const coreFields = [
-                "Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number", 
+                "Email address", "Email", "Full Name", "Name", "Phone NO", "Phone Number",
                 "Role", "Position", "Candidate Type", "Type",
                 "Total Experience", "Experience", "Work Exp", "Relevant Experience",
                 "Notice Period", "Current CTC", "CTC", "Expected CTC", "Expected",
-                "Location", "Current City", "Source", "Submission Date", "Timestamp"
+                "Location", "Current City", "Source", "Submission Date", "Timestamp",
+                "Portfolio", "Github", "Technologies", "Skills", "Live", "Production", "Comfort", "Mumbai", "Office", "Monday", "Saturday"
             ];
 
             Object.keys(row).forEach(key => {
@@ -119,10 +133,21 @@ export const bulkImportExcel = async (req, res) => {
                 expectedCTC,
                 location,
                 source,
+                resumeLink,
+                portfolioLink,
+                skills,
+                technologies,
+                hasLiveExperience,
+                mumbaiComfort,
                 details,
                 submissionDate: row["Submission Date"] || row["Timestamp"] || new Date().toISOString(),
                 status: "New",
-                statusHistory: [{ status: "New", changedAt: new Date(), changedBy: req.user._id }]
+                statusHistory: [{ status: "New", changedAt: new Date(), changedBy: req.user._id }],
+                activityLog: [{
+                    date: new Date().toISOString().split("T")[0],
+                    action: "Candidate imported from Excel",
+                    by: req.user.name || "System"
+                }]
             });
             await candidate.save();
             createdCount++;
@@ -178,7 +203,7 @@ export const getCandidates = async (req, res) => {
         // Candidate Type Filter (Fresher, Experienced, Intern, Immediate Joiner, Backup)
         if (type && type !== "All" && type !== "All Types") {
             const typeCriteria = [];
-            
+
             // 1. Check candidateType field (exact match after mapping)
             typeCriteria.push({ candidateType: type });
 
@@ -253,8 +278,7 @@ export const getCandidates = async (req, res) => {
 export const getCandidateById = async (req, res) => {
     try {
         const candidate = await Candidate.findById(req.params.id)
-            .populate("statusHistory.changedBy", "name email")
-            .populate("interview.interviewer", "name email");
+            .populate("statusHistory.changedBy", "name email");
 
         if (!candidate) {
             return res.status(404).json({ message: "Candidate not found" });
@@ -270,12 +294,13 @@ export const getCandidateById = async (req, res) => {
 // @access  Private
 export const createCandidate = async (req, res) => {
     try {
-        const { 
-            name, email, phone, role, 
+        const {
+            name, email, phone, role,
             candidateType, totalExperience, relevantExperience,
             noticePeriod, currentCTC, expectedCTC, location,
             source = "Direct",
-            status, stage, ...rest 
+            portfolioLink, skills, technologies, hasLiveExperience, mumbaiComfort,
+            status, stage, ...rest
         } = req.body;
 
         // Check if candidate already exists
@@ -288,10 +313,11 @@ export const createCandidate = async (req, res) => {
         // Collect remaining fields into details
         const details = {};
         const coreFields = [
-            "name", "email", "phone", "role", "candidateType", 
-            "totalExperience", "relevantExperience", "noticePeriod", 
-            "currentCTC", "expectedCTC", "location", "source", 
-            "status", "stage", "resumeLink", "details"
+            "name", "email", "phone", "role", "candidateType",
+            "totalExperience", "relevantExperience", "noticePeriod",
+            "currentCTC", "expectedCTC", "location", "source",
+            "status", "stage", "resumeLink", "details",
+            "portfolioLink", "skills", "technologies", "hasLiveExperience", "mumbaiComfort"
         ];
 
         Object.keys(rest).forEach(key => {
@@ -318,14 +344,32 @@ export const createCandidate = async (req, res) => {
             expectedCTC: expectedCTC || "",
             location: location || "",
             source: source || "Direct",
+            portfolioLink: portfolioLink || "",
+            skills: (() => {
+                if (Array.isArray(skills)) return skills;
+                if (!skills) return [];
+                try { const p = JSON.parse(skills); return Array.isArray(p) ? p : [p]; } catch { return String(skills).split(",").map(s => s.trim()).filter(Boolean); }
+            })(),
+            technologies: (() => {
+                if (Array.isArray(technologies)) return technologies;
+                if (!technologies) return [];
+                try { const p = JSON.parse(technologies); return Array.isArray(p) ? p : [p]; } catch { return String(technologies).split(",").map(s => s.trim()).filter(Boolean); }
+            })(),
+            hasLiveExperience: hasLiveExperience || "",
+            mumbaiComfort: mumbaiComfort || "",
             submissionDate: new Date().toISOString(),
-            resumeLink: req.file ? req.file.path : (req.body.resumeLink || ""),
+            resumeLink: req.file ? req.file.path.replace(/\\/g, "/") : (req.body.resumeLink || req.body.resume || ""),
             details,
             status: status || stage || "New",
             statusHistory: [{
                 status: status || stage || "New",
                 changedAt: new Date(),
                 changedBy: req.user._id
+            }],
+            activityLog: [{
+                date: new Date().toISOString().split("T")[0],
+                action: "Candidate created",
+                by: req.user.name || "System"
             }]
         });
 
@@ -396,6 +440,17 @@ export const updateCandidateStatus = async (req, res) => {
                 candidate: candidate._id,
                 user: req.user.id
             });
+
+            // Add to candidate's own activity log
+            candidate.activityLog.push({
+                date: new Date().toISOString().split("T")[0],
+                action: `Moved to ${status} stage`,
+                by: req.user.name || "System"
+            });
+            await candidate.save();
+
+            // Send automated status email if applicable
+            await sendCandidateEmail(candidate, status);
         }
 
         res.json(candidate);
@@ -440,13 +495,19 @@ export const addCandidateTag = async (req, res) => {
         const { tag } = req.body;
         if (!tag) return res.status(400).json({ message: "Tag is required" });
 
-        const candidate = await Candidate.findByIdAndUpdate(
-            req.params.id,
-            { $addToSet: { tags: tag } },
-            { new: true }
-        );
-
+        const candidate = await Candidate.findById(req.params.id);
         if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        if (!candidate.tags.includes(tag)) {
+            candidate.tags.push(tag);
+            candidate.activityLog.push({
+                date: new Date().toISOString().split("T")[0],
+                action: `Tag "${tag}" added`,
+                by: req.user.name || "System"
+            });
+            await candidate.save();
+        }
+
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -461,13 +522,17 @@ export const removeCandidateTag = async (req, res) => {
         const { tag } = req.body;
         if (!tag) return res.status(400).json({ message: "Tag is required" });
 
-        const candidate = await Candidate.findByIdAndUpdate(
-            req.params.id,
-            { $pull: { tags: tag } },
-            { new: true }
-        );
-
+        const candidate = await Candidate.findById(req.params.id);
         if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        candidate.tags = candidate.tags.filter(t => t !== tag);
+        candidate.activityLog.push({
+            date: new Date().toISOString().split("T")[0],
+            action: `Tag "${tag}" removed`,
+            by: req.user.name || "System"
+        });
+        await candidate.save();
+
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -503,6 +568,29 @@ export const saveCandidateFeedback = async (req, res) => {
             candidate.feedbacks.push(feedbackData);
         }
 
+        // Sync with stage-specific history fields
+        const historyEntry = {
+            date: new Date().toISOString().split("T")[0],
+            notes: comments,
+            rating: Number(rating),
+            by: req.user.name || "Interviewer"
+        };
+
+        if (stage === "Screening") {
+            candidate.screeningHistory.push(historyEntry);
+        } else if (stage === "Technical") {
+            candidate.technicalHistory.push(historyEntry);
+        } else if (stage === "Offer") {
+            candidate.offerHistory.push(historyEntry);
+        }
+
+        // Log to activity log
+        candidate.activityLog.push({
+            date: new Date().toISOString().split("T")[0],
+            action: `${stage} feedback added`,
+            by: req.user.name || "Interviewer"
+        });
+
         await candidate.save();
         res.json(candidate);
     } catch (error) {
@@ -520,9 +608,22 @@ export const updateCandidate = async (req, res) => {
             return res.status(404).json({ message: "Candidate not found" });
         }
 
+        const updateData = { ...req.body };
+
+        if (req.file) {
+            updateData.resumeLink = req.file.path.replace(/\\/g, "/");
+            if (oldCandidate.resumeLink && oldCandidate.resumeLink.startsWith("uploads")) {
+                try {
+                    if (fs.existsSync(oldCandidate.resumeLink)) fs.unlinkSync(oldCandidate.resumeLink);
+                } catch (err) {
+                    console.error("Error deleting old resume:", err.message);
+                }
+            }
+        }
+
         const candidate = await Candidate.findByIdAndUpdate(
             req.params.id,
-            { $set: req.body },
+            { $set: updateData },
             { new: true, runValidators: true }
         );
 
@@ -542,10 +643,222 @@ export const updateCandidate = async (req, res) => {
                 changedBy: req.user._id
             });
             await candidate.save();
+
+            // Send automated status email if applicable
+            await sendCandidateEmail(candidate, req.body.status);
         }
 
         res.json(candidate);
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Add a skill to a candidate
+// @route   POST /api/candidates/:id/skills
+// @access  Private
+export const addCandidateSkill = async (req, res) => {
+    try {
+        const { skill } = req.body;
+        if (!skill) return res.status(400).json({ message: "Skill is required" });
+
+        const candidate = await Candidate.findById(req.params.id);
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        if (!candidate.skills.includes(skill)) {
+            candidate.skills.push(skill);
+            candidate.activityLog.push({
+                date: new Date().toISOString().split("T")[0],
+                action: `Skill "${skill}" added`,
+                by: req.user.name || "System"
+            });
+            await candidate.save();
+        }
+
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Remove a skill from a candidate
+// @route   DELETE /api/candidates/:id/skills
+// @access  Private
+export const removeCandidateSkill = async (req, res) => {
+    try {
+        const { skill } = req.body;
+        if (!skill) return res.status(400).json({ message: "Skill is required" });
+
+        const candidate = await Candidate.findById(req.params.id);
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        candidate.skills = candidate.skills.filter(s => s !== skill);
+        candidate.activityLog.push({
+            date: new Date().toISOString().split("T")[0],
+            action: `Skill "${skill}" removed`,
+            by: req.user.name || "System"
+        });
+        await candidate.save();
+
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Add a technology to a candidate
+// @route   POST /api/candidates/:id/technologies
+// @access  Private
+export const addCandidateTechnology = async (req, res) => {
+    try {
+        const { technology } = req.body;
+        if (!technology) return res.status(400).json({ message: "Technology is required" });
+
+        const candidate = await Candidate.findById(req.params.id);
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        if (!candidate.technologies.includes(technology)) {
+            candidate.technologies.push(technology);
+            candidate.activityLog.push({
+                date: new Date().toISOString().split("T")[0],
+                action: `Technology "${technology}" added`,
+                by: req.user.name || "System"
+            });
+            await candidate.save();
+        }
+
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Remove a technology from a candidate
+// @route   DELETE /api/candidates/:id/technologies
+// @access  Private
+export const removeCandidateTechnology = async (req, res) => {
+    try {
+        const { technology } = req.body;
+        if (!technology) return res.status(400).json({ message: "Technology is required" });
+
+        const candidate = await Candidate.findById(req.params.id);
+        if (!candidate) return res.status(404).json({ message: "Candidate not found" });
+
+        candidate.technologies = candidate.technologies.filter(t => t !== technology);
+        candidate.activityLog.push({
+            date: new Date().toISOString().split("T")[0],
+            action: `Technology "${technology}" removed`,
+            by: req.user.name || "System"
+        });
+        await candidate.save();
+
+        res.json(candidate);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Upload candidate resume separately
+// @route   POST /api/candidates/:id/resume
+// @access  Private
+export const uploadCandidateResume = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: "Please upload a resume file" });
+        }
+
+        const candidate = await Candidate.findById(req.params.id);
+        if (!candidate) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ message: "Candidate not found" });
+        }
+
+        // Delete old resume if exists
+        if (candidate.resumeLink && candidate.resumeLink.startsWith("uploads")) {
+            try {
+                if (fs.existsSync(candidate.resumeLink)) fs.unlinkSync(candidate.resumeLink);
+            } catch (err) {
+                console.error("Error deleting old resume:", err.message);
+            }
+        }
+
+        candidate.resumeLink = req.file.path.replace(/\\/g, "/");
+        candidate.activityLog.push({
+            date: new Date().toISOString().split("T")[0],
+            action: "Resume updated",
+            by: req.user.name || "System"
+        });
+        await candidate.save();
+
+        res.json({ message: "Resume uploaded successfully", resumeLink: candidate.resumeLink });
+    } catch (error) {
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Bulk update candidates
+// @route   POST /api/candidates/bulk-update
+// @access  Private
+export const bulkUpdateCandidates = async (req, res) => {
+    try {
+        const { ids, data } = req.body || {};
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: "Please provide an array of candidate IDs" });
+        }
+
+        const statsToUpdate = new Set();
+        const results = [];
+
+        for (const id of ids) {
+            const candidate = await Candidate.findById(id);
+            if (!candidate) continue;
+
+            const oldStatus = candidate.status;
+            const updates = { ...data };
+
+            // Sync stage with status if provided in frontend-speak
+            if (updates.stage && !updates.status) {
+                updates.status = updates.stage;
+            }
+
+            // If status is changing, log history and activity
+            if (updates.status && updates.status !== oldStatus) {
+                candidate.statusHistory.push({
+                    status: updates.status,
+                    changedAt: new Date(),
+                    changedBy: req.user._id
+                });
+
+                candidate.activityLog.push({
+                    date: new Date().toISOString().split("T")[0],
+                    action: `Bulk update: Moved to ${updates.status}`,
+                    by: req.user.name || "System"
+                });
+                
+                statsToUpdate.add(candidate.role);
+            }
+
+            // Handle tags specially if we want to append (though usually bulk set is easier)
+            // For now, let's assume standard Object.assign for simple fields
+            Object.assign(candidate, updates);
+
+            await candidate.save();
+            results.push(candidate._id);
+        }
+
+        // Update job stats for all affected roles
+        for (const role of statsToUpdate) {
+            await updateJobStats(role);
+        }
+
+        res.json({ 
+            message: `${results.length} candidates updated successfully`, 
+            count: results.length,
+            updatedIds: results
+        });
+    } catch (error) {
+        console.error("Bulk update error:", error.message);
         res.status(500).json({ error: error.message });
     }
 };
