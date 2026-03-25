@@ -137,7 +137,12 @@ export const syncSheetData = async (userId) => {
                 details,
                 submissionDate: rowData["TimeStamp"] || rowData["Timestamp"],
                 status: "New",
-                statusHistory: [{ status: "New", changedAt: new Date(), changedBy: userId }]
+                statusHistory: [{ status: "New", changedAt: new Date(), changedBy: userId }],
+                activityLog: [{
+                    date: new Date().toISOString().split("T")[0],
+                    action: "Candidate synced from Google Sheets",
+                    by: "System"
+                }]
             });
             await candidate.save();
             createdCount++;

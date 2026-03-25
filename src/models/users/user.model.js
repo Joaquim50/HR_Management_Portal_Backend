@@ -9,10 +9,12 @@ const userSchema = new mongoose.Schema({
     password: String,
     role: {
         type: String,
-        enum: ["superadmin", "admin", "staff", "interviewer"],
+        enum: ["superadmin", "staff"],
         default: "staff"
     },
     active: { type: Boolean, default: true },
+    isInterviewer: { type: Boolean, default: false },
+    permissions: { type: mongoose.Schema.Types.Mixed, default: {} },
     refreshTokens: [String]
 }, { timestamps: true });
 
