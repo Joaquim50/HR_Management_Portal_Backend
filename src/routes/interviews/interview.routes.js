@@ -11,12 +11,12 @@ import { protect, authorize } from "../../middlewares/auth.middleware.js";
 const router = express.Router();
 
 router.route("/")
-    .get(protect, authorize("pipeline", "view"), getInterviews) // Using 'pipeline' as slug since it's in the sidebar
+    .get(protect, getInterviews) // Security handled in controller for interviewers
     .post(protect, authorize("pipeline", "create"), scheduleInterview);
 
 router.route("/:id")
-    .get(protect, authorize("pipeline", "view"), getInterviewById)
-    .put(protect, authorize("pipeline", "update"), updateInterview)
+    .get(protect, getInterviewById) // Security handled in controller for interviewers
+    .put(protect, updateInterview) // Security handled in controller for interviewers
     .delete(protect, authorize("pipeline", "delete"), deleteInterview);
 
 export default router;

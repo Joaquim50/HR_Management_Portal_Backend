@@ -42,7 +42,14 @@ export const register = async (req, res) => {
         res.status(201).json({ 
             accessToken, 
             refreshToken, 
-            user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions } 
+            user: { 
+                id: user._id, 
+                name: user.name, 
+                email: user.email, 
+                role: user.role, 
+                permissions: user.permissions,
+                isInterviewer: user.isInterviewer 
+            } 
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -62,14 +69,20 @@ export const login = async (req, res) => {
 
         const { accessToken, refreshToken } = generateTokens(user);
         
-        // Add new refresh token to user (support multiple devices)
         user.refreshTokens.push(refreshToken);
         await user.save();
 
         res.json({ 
             accessToken, 
             refreshToken, 
-            user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions } 
+            user: { 
+                id: user._id, 
+                name: user.name, 
+                email: user.email, 
+                role: user.role, 
+                permissions: user.permissions,
+                isInterviewer: user.isInterviewer 
+            } 
         });
     } catch (err) {
         res.status(500).json({ error: err.message });

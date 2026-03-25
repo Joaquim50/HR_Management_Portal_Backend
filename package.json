@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "nodemon server.js",
-    "dev": "node server.js",
+    "dev": "nodemon server.js",
     "seed:admin": "node src/utils/seed_admin.js",
     "seed:modules": "node src/utils/seed_modules.js"
   },
