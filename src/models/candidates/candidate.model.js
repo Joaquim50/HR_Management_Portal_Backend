@@ -11,6 +11,7 @@ const candidateSchema = new mongoose.Schema({
         enum: ["FullStack MERN", "QA", "Flutter", "UI/UX", "Other"],
         default: "Other"
     },
+    interviewer: { type: [String] },
     resumeLink: String,
 
     // Detailed Candidate Info (Promoted to top-level)
