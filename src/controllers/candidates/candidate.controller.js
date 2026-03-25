@@ -4,6 +4,7 @@ import * as sheetService from "../../services/sheet.service.js";
 import Candidate from "../../models/candidates/candidate.model.js";
 import { updateJobStats } from "../../utils/jobUtils.js";
 import Activity from "../../models/dashboard/activity.model.js";
+import { sendCandidateEmail } from "../../services/email.service.js";
 
 // @desc    Sync candidates from Google Sheets
 // @route   POST /api/candidates/sync
@@ -437,6 +438,9 @@ export const updateCandidateStatus = async (req, res) => {
                 by: req.user.name || "System"
             });
             await candidate.save();
+
+            // Send automated status email if applicable
+            await sendCandidateEmail(candidate, status);
         }
 
         res.json(candidate);
@@ -629,6 +633,9 @@ export const updateCandidate = async (req, res) => {
                 changedBy: req.user._id
             });
             await candidate.save();
+
+            // Send automated status email if applicable
+            await sendCandidateEmail(candidate, req.body.status);
         }
 
         res.json(candidate);
