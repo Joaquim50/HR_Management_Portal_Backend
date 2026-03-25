@@ -27,10 +27,7 @@ export const protect = async (req, res, next) => {
     }
 };
 
-import UserPermission from "../models/roles/userPermission.model.js";
-import Module from "../models/roles/module.model.js";
-
-// @desc    Authorize user based on permissions (Normalized Models)
+// @desc    Authorize user based on permissions (Embedded in User Model)
 export const authorize = (moduleSlug, action) => {
     return async (req, res, next) => {
         if (!req.user) {
@@ -41,37 +38,48 @@ export const authorize = (moduleSlug, action) => {
         if (req.user.role === "superadmin") return next();
 
         try {
-            // 1. Find the module by slug
-            const module = await Module.findOne({ slug: moduleSlug });
-            if (!module) {
-                return res.status(500).json({ message: `System error: Module ${moduleSlug} not found` });
-            }
-
-            // 2. Find user's permission for this module
-            const permission = await UserPermission.findOne({ 
-                user: req.user._id, 
-                module: module._id 
-            });
-
-            if (!permission) {
-                return res.status(403).json({ message: `Access denied: No permissions set for module ${moduleSlug}` });
-            }
-
-            // 3. Map action string to model field
+            const permissions = req.user.permissions || {};
+            let hasAccess = false;
+            
+            // Map action string (view, create, update, delete)
             const flagMap = {
-                view: "canView",
-                create: "canCreate",
-                update: "canUpdate",
-                delete: "canDelete"
+                view: "view",
+                create: "create",
+                update: "update",
+                delete: "delete"
             };
+            const actionFlag = flagMap[action] || action;
 
-            const flag = flagMap[action];
-            if (!flag || !permission[flag]) {
-                return res.status(403).json({ message: `Access denied: Missing ${action} permission in ${moduleSlug}` });
+            // Search the nested permissions structure: permissions[section][module][action]
+            // moduleSlug passed from route is typically the section (e.g., 'candidates', 'jobs')
+            if (permissions[moduleSlug]) {
+                const sectionPerms = permissions[moduleSlug];
+                for (const modKey in sectionPerms) {
+                    if (sectionPerms[modKey] && sectionPerms[modKey][actionFlag] === true) {
+                        hasAccess = true;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback: search all sections just in case the moduleSlug matches the inner module key
+            if (!hasAccess) {
+                for (const secKey in permissions) {
+                    const sectionPerms = permissions[secKey];
+                    if (sectionPerms[moduleSlug] && sectionPerms[moduleSlug][actionFlag] === true) {
+                        hasAccess = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasAccess) {
+                return res.status(403).json({ message: `Access denied: Missing ${action} permission for ${moduleSlug}` });
             }
 
             next();
         } catch (error) {
+            console.error("Auth Middleware Error:", error);
             res.status(500).json({ error: error.message });
         }
     };

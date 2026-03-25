@@ -42,7 +42,7 @@ export const register = async (req, res) => {
         res.status(201).json({ 
             accessToken, 
             refreshToken, 
-            user: { id: user._id, name: user.name, email: user.email, role: user.role } 
+            user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions } 
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -69,7 +69,7 @@ export const login = async (req, res) => {
         res.json({ 
             accessToken, 
             refreshToken, 
-            user: { id: user._id, name: user.name, email: user.email, role: user.role } 
+            user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions } 
         });
     } catch (err) {
         res.status(500).json({ error: err.message });

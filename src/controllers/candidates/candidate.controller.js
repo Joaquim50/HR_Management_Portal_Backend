@@ -142,7 +142,12 @@ export const bulkImportExcel = async (req, res) => {
                 details,
                 submissionDate: row["Submission Date"] || row["Timestamp"] || new Date().toISOString(),
                 status: "New",
-                statusHistory: [{ status: "New", changedAt: new Date(), changedBy: req.user._id }]
+                statusHistory: [{ status: "New", changedAt: new Date(), changedBy: req.user._id }],
+                activityLog: [{
+                    date: new Date().toISOString().split("T")[0],
+                    action: "Candidate imported from Excel",
+                    by: req.user.name || "System"
+                }]
             });
             await candidate.save();
             createdCount++;
@@ -360,6 +365,11 @@ export const createCandidate = async (req, res) => {
                 status: status || stage || "New",
                 changedAt: new Date(),
                 changedBy: req.user._id
+            }],
+            activityLog: [{
+                date: new Date().toISOString().split("T")[0],
+                action: "Candidate created",
+                by: req.user.name || "System"
             }]
         });
 
@@ -783,6 +793,72 @@ export const uploadCandidateResume = async (req, res) => {
         res.json({ message: "Resume uploaded successfully", resumeLink: candidate.resumeLink });
     } catch (error) {
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Bulk update candidates
+// @route   POST /api/candidates/bulk-update
+// @access  Private
+export const bulkUpdateCandidates = async (req, res) => {
+    try {
+        const { ids, data } = req.body || {};
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: "Please provide an array of candidate IDs" });
+        }
+
+        const statsToUpdate = new Set();
+        const results = [];
+
+        for (const id of ids) {
+            const candidate = await Candidate.findById(id);
+            if (!candidate) continue;
+
+            const oldStatus = candidate.status;
+            const updates = { ...data };
+
+            // Sync stage with status if provided in frontend-speak
+            if (updates.stage && !updates.status) {
+                updates.status = updates.stage;
+            }
+
+            // If status is changing, log history and activity
+            if (updates.status && updates.status !== oldStatus) {
+                candidate.statusHistory.push({
+                    status: updates.status,
+                    changedAt: new Date(),
+                    changedBy: req.user._id
+                });
+
+                candidate.activityLog.push({
+                    date: new Date().toISOString().split("T")[0],
+                    action: `Bulk update: Moved to ${updates.status}`,
+                    by: req.user.name || "System"
+                });
+                
+                statsToUpdate.add(candidate.role);
+            }
+
+            // Handle tags specially if we want to append (though usually bulk set is easier)
+            // For now, let's assume standard Object.assign for simple fields
+            Object.assign(candidate, updates);
+
+            await candidate.save();
+            results.push(candidate._id);
+        }
+
+        // Update job stats for all affected roles
+        for (const role of statsToUpdate) {
+            await updateJobStats(role);
+        }
+
+        res.json({ 
+            message: `${results.length} candidates updated successfully`, 
+            count: results.length,
+            updatedIds: results
+        });
+    } catch (error) {
+        console.error("Bulk update error:", error.message);
         res.status(500).json({ error: error.message });
     }
 };

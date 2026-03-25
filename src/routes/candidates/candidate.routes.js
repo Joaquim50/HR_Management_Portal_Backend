@@ -15,7 +15,8 @@ import {
     addCandidateTechnology,
     removeCandidateTechnology,
     saveCandidateFeedback,
-    uploadCandidateResume
+    uploadCandidateResume,
+    bulkUpdateCandidates
 } from "../../controllers/candidates/candidate.controller.js";
 import { protect, authorize } from "../../middlewares/auth.middleware.js";
 import upload from "../../middlewares/upload.middleware.js";
@@ -25,6 +26,7 @@ const router = express.Router();
 // Bulk Operations
 router.post("/sync", protect, authorize("candidates", "create"), syncCandidates);
 router.post("/import", protect, authorize("candidates", "create"), upload.single("file"), bulkImportExcel);
+router.post("/bulk-update", protect, authorize("candidates", "update"), bulkUpdateCandidates);
 
 // Standard CRUD
 router.get("/", protect, authorize("candidates", "view"), getCandidates);
