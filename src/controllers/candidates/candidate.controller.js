@@ -5,6 +5,7 @@ import Candidate from "../../models/candidates/candidate.model.js";
 import { updateJobStats } from "../../utils/jobUtils.js";
 import Activity from "../../models/dashboard/activity.model.js";
 import { sendCandidateEmail } from "../../services/email.service.js";
+import Interview from "../../models/interviews/interview.model.js";
 
 // @desc    Sync candidates from Google Sheets
 // @route   POST /api/candidates/sync
@@ -187,6 +188,17 @@ export const getCandidates = async (req, res) => {
         } = req.query;
 
         const query = {};
+        let projection = null;
+
+        // Interviewer Restrictions: Only see assigned candidates & restricted fields
+        if (req.user.role !== "superadmin" && req.user.isInterviewer) {
+            const interviews = await Interview.find({ interviewer: req.user._id });
+            const assignedIds = interviews.map(inv => inv.candidate);
+            query._id = { $in: assignedIds };
+            
+            // Limit fields for interviewers
+            projection = "name email phone resumeLink role totalExperience noticePeriod status";
+        }
 
         // Role Filter (Exact or partial match)
         if (role && role !== "All") {
@@ -255,7 +267,7 @@ export const getCandidates = async (req, res) => {
         sortOptions[sortBy] = order === "desc" ? -1 : 1;
 
         const total = await Candidate.countDocuments(query);
-        const candidates = await Candidate.find(query)
+        const candidates = await Candidate.find(query, projection)
             .sort(sortOptions)
             .skip(skip)
             .limit(parseInt(limit))
@@ -277,7 +289,22 @@ export const getCandidates = async (req, res) => {
 // @access  Private
 export const getCandidateById = async (req, res) => {
     try {
-        const candidate = await Candidate.findById(req.params.id)
+        let projection = null;
+
+        // Interviewer Restriction: Verify assignment and limit fields
+        if (req.user.role !== "superadmin" && req.user.isInterviewer) {
+            const isAssigned = await Interview.exists({ 
+                candidate: req.params.id, 
+                interviewer: req.user._id 
+            });
+
+            if (!isAssigned) {
+                return res.status(403).json({ message: "Access denied: You are not assigned to this candidate" });
+            }
+            projection = "name email phone resumeLink role totalExperience noticePeriod status feedbacks";
+        }
+
+        const candidate = await Candidate.findById(req.params.id, projection)
             .populate("statusHistory.changedBy", "name email");
 
         if (!candidate) {

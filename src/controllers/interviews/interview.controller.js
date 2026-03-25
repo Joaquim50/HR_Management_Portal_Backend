@@ -52,8 +52,15 @@ export const scheduleInterview = async (req, res) => {
 // @access  Private
 export const getInterviews = async (req, res) => {
     try {
-        const interviews = await Interview.find()
-            .populate("candidate", "name email phone role")
+        const query = {};
+        
+        // Interviewer Restriction: Only see own interviews
+        if (req.user.role !== "superadmin" && req.user.isInterviewer) {
+            query.interviewer = req.user._id;
+        }
+
+        const interviews = await Interview.find(query)
+            .populate("candidate", "name email phone role totalExperience noticePeriod status resumeLink")
             .populate("jobOpening", "role status")
             .populate("interviewer", "name email")
             .sort({ scheduledAt: -1 });
@@ -70,13 +77,21 @@ export const getInterviews = async (req, res) => {
 export const getInterviewById = async (req, res) => {
     try {
         const interview = await Interview.findById(req.params.id)
-            .populate("candidate")
+            .populate("candidate", "name email phone role totalExperience noticePeriod status resumeLink")
             .populate("jobOpening")
             .populate("interviewer", "name email");
 
         if (!interview) {
             return res.status(404).json({ message: "Interview not found" });
         }
+
+        // Interviewer Restriction: Verify ownership
+        if (req.user.role !== "superadmin" && req.user.isInterviewer) {
+            if (interview.interviewer._id.toString() !== req.user._id.toString()) {
+                return res.status(403).json({ message: "Access denied: This interview is not assigned to you" });
+            }
+        }
+
         res.json(interview);
     } catch (error) {
         res.status(500).json({ error: error.message });

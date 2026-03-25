@@ -49,6 +49,11 @@ const interviewSchema = new mongoose.Schema({
         type: Number,
         min: 1,
         max: 5
+    },
+    result: {
+        type: String,
+        enum: ["Pending", "Pass", "Fail"],
+        default: "Pending"
     }
 }, { timestamps: true });
 
