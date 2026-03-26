@@ -145,7 +145,7 @@ export const bulkImportExcel = async (req, res) => {
                 status: "New",
                 statusHistory: [{ status: "New", changedAt: new Date(), changedBy: req.user._id }],
                 activityLog: [{
-                    date: new Date().toISOString().split("T")[0],
+                    date: new Date(),
                     action: "Candidate imported from Excel",
                     by: req.user.name || "System"
                 }]
@@ -191,35 +191,6 @@ export const getCandidates = async (req, res) => {
         const query = {};
         let projection = null;
 
-        // Interviewer Restrictions: Only see assigned candidates & restricted fields
-        if (req.user.role !== "superadmin" && req.user.isInterviewer) {
-            const interviews = await Interview.find({ interviewer: req.user._id });
-            const assignedIds = interviews.map(inv => inv.candidate);
-            query._id = { $in: assignedIds };
-            
-            // Limit fields for interviewers
-            projection = "name email phone resumeLink role totalExperience noticePeriod status";
-        }
-
-        // Interviewer Filter (Matches email/name in active list OR in round history)
-        if (interviewer) {
-            const escapedInterviewer = interviewer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const interviewerRegex = new RegExp(`^${escapedInterviewer}$`, 'i');
-            const interviewerFilter = { 
-                $or: [
-                    { interviewer: interviewer },
-                    { interviewer: interviewerRegex },
-                    { "technicalHistory.by": interviewer },
-                    { "technicalHistory.by": interviewerRegex },
-                    { "screeningHistory.by": interviewer },
-                    { "screeningHistory.by": interviewerRegex },
-                    { "offerHistory.by": interviewer },
-                    { "offerHistory.by": interviewerRegex }
-                ] 
-            };
-            query.$and = query.$and ? [...query.$and, interviewerFilter] : [interviewerFilter];
-        }
-
         // Security: If not superadmin and no general view permission, enforce interviewer restriction
         const hasGeneralView = req.user.role === "superadmin" || 
                               (req.user.permissions?.candidates && Object.values(req.user.permissions.candidates).some(m => m.view));
@@ -231,10 +202,14 @@ export const getCandidates = async (req, res) => {
             // Force restrict to only candidates assigned to this user OR where they gave feedback
             const myEmail = req.user.email;
             const myName = req.user.name;
+            const myIdStr = req.user._id.toString();
+
             const interviewerFilter = { 
                 $or: [
                     { interviewer: myEmail }, 
                     { interviewer: myName },
+                    { interviewer: req.user._id },
+                    { interviewer: { $in: [myEmail, myName, myIdStr] } },
                     { "technicalHistory.by": myEmail },
                     { "technicalHistory.by": myName },
                     { "screeningHistory.by": myEmail },
@@ -243,7 +218,18 @@ export const getCandidates = async (req, res) => {
                     { "offerHistory.by": myName }
                 ] 
             };
+            
+            // Allow candidates that have active interviews assigned to this user
+            const interviews = await Interview.find({ interviewer: req.user._id });
+            const assignedIds = interviews.map(inv => inv.candidate);
+            if (assignedIds.length > 0) {
+                interviewerFilter.$or.push({ _id: { $in: assignedIds } });
+            }
+
             query.$and = query.$and ? [...query.$and, interviewerFilter] : [interviewerFilter];
+            
+            // Make sure projection isn't too restrictive, so frontend has access to histories and interviewer field
+            projection = "name email phone resumeLink role candidateType experience totalExperience noticePeriod status interviewer tags source details feedbacks screeningHistory technicalHistory offerHistory appliedDate createdAt nextInterviewDate";
         }
 
         // Role Filter (Exact or partial match)
@@ -452,7 +438,7 @@ export const createCandidate = async (req, res) => {
                 changedBy: req.user._id
             }],
             activityLog: [{
-                date: new Date().toISOString().split("T")[0],
+                date: new Date(),
                 action: "Candidate created",
                 by: req.user.name || "System"
             }]
@@ -528,7 +514,7 @@ export const updateCandidateStatus = async (req, res) => {
 
             // Add to candidate's own activity log
             candidate.activityLog.push({
-                date: new Date().toISOString().split("T")[0],
+                date: new Date(),
                 action: `Moved to ${status} stage`,
                 by: req.user.name || "System"
             });
@@ -586,7 +572,7 @@ export const addCandidateTag = async (req, res) => {
         if (!candidate.tags.includes(tag)) {
             candidate.tags.push(tag);
             candidate.activityLog.push({
-                date: new Date().toISOString().split("T")[0],
+                date: new Date(),
                 action: `Tag "${tag}" added`,
                 by: req.user.name || "System"
             });
@@ -612,7 +598,7 @@ export const removeCandidateTag = async (req, res) => {
 
         candidate.tags = candidate.tags.filter(t => t !== tag);
         candidate.activityLog.push({
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             action: `Tag "${tag}" removed`,
             by: req.user.name || "System"
         });
@@ -655,7 +641,7 @@ export const saveCandidateFeedback = async (req, res) => {
 
         // Sync with stage-specific history fields
         const historyEntry = {
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             notes: comments,
             rating: Number(rating),
             by: req.user.name || "Interviewer"
@@ -671,7 +657,7 @@ export const saveCandidateFeedback = async (req, res) => {
 
         // Log to activity log
         candidate.activityLog.push({
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             action: `${stage} feedback added`,
             by: req.user.name || "Interviewer"
         });
@@ -777,7 +763,7 @@ export const updateCandidate = async (req, res) => {
 
                 // Add to candidate's own activity log
                 candidate.activityLog.push({
-                    date: new Date().toISOString().split("T")[0],
+                    date: new Date(),
                     action: activityContent,
                     by: req.user?.name || "System"
                 });
@@ -825,7 +811,7 @@ export const addCandidateSkill = async (req, res) => {
         if (!candidate.skills.includes(skill)) {
             candidate.skills.push(skill);
             candidate.activityLog.push({
-                date: new Date().toISOString().split("T")[0],
+                date: new Date(),
                 action: `Skill "${skill}" added`,
                 by: req.user.name || "System"
             });
@@ -851,7 +837,7 @@ export const removeCandidateSkill = async (req, res) => {
 
         candidate.skills = candidate.skills.filter(s => s !== skill);
         candidate.activityLog.push({
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             action: `Skill "${skill}" removed`,
             by: req.user.name || "System"
         });
@@ -877,7 +863,7 @@ export const addCandidateTechnology = async (req, res) => {
         if (!candidate.technologies.includes(technology)) {
             candidate.technologies.push(technology);
             candidate.activityLog.push({
-                date: new Date().toISOString().split("T")[0],
+                date: new Date(),
                 action: `Technology "${technology}" added`,
                 by: req.user.name || "System"
             });
@@ -903,7 +889,7 @@ export const removeCandidateTechnology = async (req, res) => {
 
         candidate.technologies = candidate.technologies.filter(t => t !== technology);
         candidate.activityLog.push({
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             action: `Technology "${technology}" removed`,
             by: req.user.name || "System"
         });
@@ -941,7 +927,7 @@ export const uploadCandidateResume = async (req, res) => {
 
         candidate.resumeLink = req.file.path.replace(/\\/g, "/");
         candidate.activityLog.push({
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             action: "Resume updated",
             by: req.user.name || "System"
         });
@@ -997,7 +983,7 @@ export const bulkUpdateCandidates = async (req, res) => {
                 });
 
                 candidate.activityLog.push({
-                    date: new Date().toISOString().split("T")[0],
+                    date: new Date(),
                     action: `Bulk update: Moved to ${updates.status}`,
                     by: req.user.name || "System"
                 });

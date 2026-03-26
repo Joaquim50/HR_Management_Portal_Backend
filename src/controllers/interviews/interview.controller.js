@@ -169,7 +169,7 @@ export const updateInterview = async (req, res) => {
                     
                     const interviewerIdentity = interview.interviewer?.email || interview.interviewer?.name || "";
                     const feedbackEntry = {
-                        date: new Date().toISOString().split("T")[0],
+                        date: new Date(),
                         notes: req.body.feedback || "Feedback submitted via Interviewer Portal",
                         rating: req.body.rating,
                         recommendation: recommendation,
@@ -196,7 +196,7 @@ export const updateInterview = async (req, res) => {
                     }
 
                     candidate.activityLog.push({
-                        date: new Date().toISOString().split("T")[0],
+                        date: new Date(),
                         action: `Interview Feedback Submitted: ${recommendation}`,
                         by: feedbackEntry.by
                     });

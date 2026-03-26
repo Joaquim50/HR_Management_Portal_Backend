@@ -81,29 +81,34 @@ const candidateSchema = new mongoose.Schema({
     },
     screeningHistory: [
         {
-            date: String,
+            date: Date,
             notes: String,
+            rating: Number,
+            recommendation: String,
             by: String
         }
     ],
     technicalHistory: [
         {
-            date: String,
+            date: Date,
             notes: String,
             rating: Number,
+            recommendation: String,
             by: String
         }
     ],
     offerHistory: [
         {
-            date: String,
+            date: Date,
             notes: String,
+            rating: Number,
+            recommendation: String,
             by: String
         }
     ],
     activityLog: [
         {
-            date: String,
+            date: Date,
             action: String,
             by: String
         }
