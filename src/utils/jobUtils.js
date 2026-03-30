@@ -7,13 +7,11 @@ import Candidate from "../models/candidates/candidate.model.js";
  */
 export const updateJobStats = async (roleName) => {
     try {
-        console.log(`[DEBUG] updateJobStats called for role: "${roleName}"`);
         if (!roleName) return;
 
         // 1. Find the job opening for this role
         const jobOpening = await JobOpening.findOne({ role: roleName });
         if (!jobOpening) {
-            console.log(`[DEBUG] No JobOpening found for role: "${roleName}"`);
             return;
         }
 
@@ -38,7 +36,6 @@ export const updateJobStats = async (roleName) => {
         const overflowBackupCount = Math.max(0, joinedCount - jobOpening.requiredCount);
         const finalBackupCount = explicitBackupCount + overflowBackupCount;
 
-        console.log(`[DEBUG] Joined=${joinedCount}, Required=${jobOpening.requiredCount} -> Hired=${actualHiredCount}, OverflowBackup=${overflowBackupCount}`);
 
         // 4. Update the JobOpening document
         jobOpening.hiredCount = actualHiredCount;
@@ -47,7 +44,6 @@ export const updateJobStats = async (roleName) => {
         
         await jobOpening.save();
 
-        console.log(`Updated stats for ${roleName}: Hired=${hiredCount}, Rejected=${rejectedCount}`);
     } catch (error) {
         console.error(`Error updating job stats for ${roleName}:`, error.message);
     }
