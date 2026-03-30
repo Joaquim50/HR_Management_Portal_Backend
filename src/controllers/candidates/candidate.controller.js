@@ -145,7 +145,7 @@ export const bulkImportExcel = async (req, res) => {
                 status: "New",
                 statusHistory: [{ status: "New", changedAt: new Date(), changedBy: req.user._id }],
                 activityLog: [{
-                    date: new Date().toISOString().split("T")[0],
+                    date: new Date(),
                     action: "Candidate imported from Excel",
                     by: req.user.name || "System"
                 }]
@@ -183,21 +183,58 @@ export const getCandidates = async (req, res) => {
             sortBy = "createdAt",
             order = "desc",
             page = 1,
-            limit = 10,
-            search
+            limit = 1000,
+            search,
+            interviewer
         } = req.query;
 
         const query = {};
         let projection = null;
 
-        // Interviewer Restrictions: Only see assigned candidates & restricted fields
-        if (req.user.role !== "superadmin" && req.user.isInterviewer) {
+        // Security: If not superadmin and no general view permission, enforce interviewer restriction
+        const hasGeneralView = req.user.role === "superadmin" || 
+                              (req.user.permissions?.candidates && Object.values(req.user.permissions.candidates).some(m => m.view));
+        
+        if (!hasGeneralView) {
+            if (!req.user.isInterviewer) {
+                return res.status(403).json({ message: "Access denied" });
+            }
+            // Force restrict to only candidates assigned to this user OR where they gave feedback
+            const myEmail = req.user.email;
+            const myName = req.user.name;
+            const myIdStr = req.user._id.toString();
+
+            const escEmail = myEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const escName = myName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const emailRe = new RegExp(`^${escEmail}$`, "i");
+            const nameRe = new RegExp(`^${escName}$`, "i");
+
+            const interviewerFilter = { 
+                $or: [
+                    { interviewer: emailRe }, 
+                    { interviewer: nameRe },
+                    { interviewer: req.user._id },
+                    { interviewer: { $in: [emailRe, nameRe, req.user._id] } },
+                    { "technicalHistory.by": emailRe },
+                    { "technicalHistory.by": nameRe },
+                    { "screeningHistory.by": emailRe },
+                    { "screeningHistory.by": nameRe },
+                    { "offerHistory.by": emailRe },
+                    { "offerHistory.by": nameRe }
+                ] 
+            };
+            
+            // Allow candidates that have active interviews assigned to this user
             const interviews = await Interview.find({ interviewer: req.user._id });
             const assignedIds = interviews.map(inv => inv.candidate);
-            query._id = { $in: assignedIds };
+            if (assignedIds.length > 0) {
+                interviewerFilter.$or.push({ _id: { $in: assignedIds } });
+            }
+
+            query.$and = query.$and ? [...query.$and, interviewerFilter] : [interviewerFilter];
             
-            // Limit fields for interviewers
-            projection = "name email phone resumeLink role totalExperience noticePeriod status";
+            // Make sure projection isn't too restrictive, so frontend has access to histories and interviewer field
+            projection = "name email phone resumeLink role candidateType experience totalExperience noticePeriod status interviewer tags source details feedbacks screeningHistory technicalHistory offerHistory appliedDate createdAt nextInterviewDate";
         }
 
         // Role Filter (Exact or partial match)
@@ -310,6 +347,18 @@ export const getCandidateById = async (req, res) => {
         if (!candidate) {
             return res.status(404).json({ message: "Candidate not found" });
         }
+
+        // Security: Check if user has permission to view this specific candidate
+        const hasGeneralView = req.user.role === "superadmin" || 
+                              (req.user.permissions?.candidates && Object.values(req.user.permissions.candidates).some(m => m.view));
+        
+        if (!hasGeneralView) {
+            const isAssigned = candidate.interviewer === req.user.email || candidate.interviewer === req.user.name;
+            if (!isAssigned) {
+                return res.status(403).json({ message: "Access denied to this candidate" });
+            }
+        }
+
         res.json(candidate);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -394,7 +443,7 @@ export const createCandidate = async (req, res) => {
                 changedBy: req.user._id
             }],
             activityLog: [{
-                date: new Date().toISOString().split("T")[0],
+                date: new Date(),
                 action: "Candidate created",
                 by: req.user.name || "System"
             }]
@@ -470,7 +519,7 @@ export const updateCandidateStatus = async (req, res) => {
 
             // Add to candidate's own activity log
             candidate.activityLog.push({
-                date: new Date().toISOString().split("T")[0],
+                date: new Date(),
                 action: `Moved to ${status} stage`,
                 by: req.user.name || "System"
             });
@@ -528,7 +577,7 @@ export const addCandidateTag = async (req, res) => {
         if (!candidate.tags.includes(tag)) {
             candidate.tags.push(tag);
             candidate.activityLog.push({
-                date: new Date().toISOString().split("T")[0],
+                date: new Date(),
                 action: `Tag "${tag}" added`,
                 by: req.user.name || "System"
             });
@@ -554,7 +603,7 @@ export const removeCandidateTag = async (req, res) => {
 
         candidate.tags = candidate.tags.filter(t => t !== tag);
         candidate.activityLog.push({
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             action: `Tag "${tag}" removed`,
             by: req.user.name || "System"
         });
@@ -597,7 +646,7 @@ export const saveCandidateFeedback = async (req, res) => {
 
         // Sync with stage-specific history fields
         const historyEntry = {
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             notes: comments,
             rating: Number(rating),
             by: req.user.name || "Interviewer"
@@ -613,7 +662,7 @@ export const saveCandidateFeedback = async (req, res) => {
 
         // Log to activity log
         candidate.activityLog.push({
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             action: `${stage} feedback added`,
             by: req.user.name || "Interviewer"
         });
@@ -637,6 +686,22 @@ export const updateCandidate = async (req, res) => {
 
         const updateData = { ...req.body };
 
+        // Security: Check if user has permission to update this specific candidate
+        const hasGeneralUpdate = req.user.role === "superadmin" || 
+                                (req.user.permissions?.candidates && Object.values(req.user.permissions.candidates).some(m => m.update));
+        
+        if (!hasGeneralUpdate) {
+            const userEmail = req.user.email?.toLowerCase();
+            const userName = req.user.name?.toLowerCase();
+            
+            const isAssigned = Array.isArray(oldCandidate.interviewer) 
+                ? oldCandidate.interviewer.some(i => i?.toLowerCase() === userEmail || i?.toLowerCase() === userName)
+                : (oldCandidate.interviewer?.toLowerCase() === userEmail || oldCandidate.interviewer?.toLowerCase() === userName);
+            if (!isAssigned) {
+                return res.status(403).json({ message: "Access denied: You can only update candidates assigned to you" });
+            }
+        }
+
         if (req.file) {
             updateData.resumeLink = req.file.path.replace(/\\/g, "/");
             if (oldCandidate.resumeLink && oldCandidate.resumeLink.startsWith("uploads")) {
@@ -648,31 +713,93 @@ export const updateCandidate = async (req, res) => {
             }
         }
 
+        const oldRole = oldCandidate.role;
+        const oldStatus = oldCandidate.status;
+
         const candidate = await Candidate.findByIdAndUpdate(
             req.params.id,
             { $set: updateData },
             { new: true, runValidators: true }
         );
 
-        // Log Activity if status changed
-        if (req.body.status && req.body.status !== oldCandidate.status) {
-            await Activity.create({
-                content: `${candidate.name} moved to ${req.body.status} round`,
-                type: req.body.status === "Joined" ? "hired" : req.body.status === "Rejected" ? "rejected" : "status_change",
-                candidate: candidate._id,
-                user: req.user.id
-            });
+        const statusChanged = req.body.status && req.body.status !== oldStatus;
+        const roleChanged = req.body.role && req.body.role !== oldRole;
+        const feedbackAdded = (req.body.technicalHistory && req.body.technicalHistory.length > (oldCandidate.technicalHistory?.length || 0)) ||
+                            (req.body.screeningHistory && req.body.screeningHistory.length > (oldCandidate.screeningHistory?.length || 0)) ||
+                            (req.body.offerHistory && req.body.offerHistory.length > (oldCandidate.offerHistory?.length || 0));
 
-            // Update status history
-            candidate.statusHistory.push({
-                status: req.body.status,
-                changedAt: new Date(),
-                changedBy: req.user._id
-            });
-            await candidate.save();
+        if (statusChanged || roleChanged || feedbackAdded) {
+            // Recalculate stats for old role
+            if (oldRole) await updateJobStats(oldRole);
+            
+            // Recalculate stats for new role (if role changed)
+            if (roleChanged && candidate.role && candidate.role !== oldRole) {
+                await updateJobStats(candidate.role);
+            }
 
-            // Send automated status email if applicable
-            await sendCandidateEmail(candidate, req.body.status);
+            // Log Activity if status changed or feedback added
+            if (statusChanged || feedbackAdded) {
+                let activityContent = "";
+                let activityType = "status_change";
+
+                if (statusChanged) {
+                    activityContent = `${candidate.name} moved to ${req.body.status} round`;
+                    activityType = req.body.status === "Joined" ? "hired" : req.body.status === "Rejected" ? "rejected" : "status_change";
+                } else if (feedbackAdded) {
+                    const type = req.body.technicalHistory ? "Technical" : req.body.screeningHistory ? "Screening" : "Offer";
+                    activityContent = `Feedback received for ${candidate.name} (${type} round)`;
+                    activityType = "status_change";
+                }
+
+                await Activity.create({
+                    content: activityContent,
+                    type: activityType,
+                    candidate: candidate._id,
+                    user: req.user?._id || req.user?.id
+                });
+
+                // Update status history
+                candidate.statusHistory.push({
+                    status: req.body.status || oldStatus,
+                    changedAt: new Date(),
+                    changedBy: req.user?._id || req.user?.id,
+                    notes: feedbackAdded ? "Feedback received" : ""
+                });
+
+                // Add to candidate's own activity log
+                candidate.activityLog.push({
+                    date: new Date(),
+                    action: activityContent,
+                    by: req.user?.name || "System"
+                });
+
+                // Remove interviewer from active assigned list if feedback was added
+                if (feedbackAdded) {
+                    const userEmail = (req.user.email || "").toLowerCase();
+                    const userName = (req.user.name || "").toLowerCase();
+                    const userIdStr = (req.user._id || req.user.id || "").toString().toLowerCase();
+                    
+                    if (Array.isArray(candidate.interviewer)) {
+                        candidate.interviewer = candidate.interviewer.filter(i => {
+                            if (!i) return false;
+                            const val = i.toString().toLowerCase();
+                            return val !== userEmail && val !== userName && val !== userIdStr;
+                        });
+                    } else if (candidate.interviewer) {
+                        const val = candidate.interviewer.toString().toLowerCase();
+                        if (val === userEmail || val === userName || val === userIdStr) {
+                            candidate.interviewer = [];
+                        }
+                    }
+                }
+
+                await candidate.save();
+
+                // Send automated status email if applicable
+                if (statusChanged) {
+                    await sendCandidateEmail(candidate, req.body.status);
+                }
+            }
         }
 
         res.json(candidate);
@@ -695,7 +822,7 @@ export const addCandidateSkill = async (req, res) => {
         if (!candidate.skills.includes(skill)) {
             candidate.skills.push(skill);
             candidate.activityLog.push({
-                date: new Date().toISOString().split("T")[0],
+                date: new Date(),
                 action: `Skill "${skill}" added`,
                 by: req.user.name || "System"
             });
@@ -721,7 +848,7 @@ export const removeCandidateSkill = async (req, res) => {
 
         candidate.skills = candidate.skills.filter(s => s !== skill);
         candidate.activityLog.push({
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             action: `Skill "${skill}" removed`,
             by: req.user.name || "System"
         });
@@ -747,7 +874,7 @@ export const addCandidateTechnology = async (req, res) => {
         if (!candidate.technologies.includes(technology)) {
             candidate.technologies.push(technology);
             candidate.activityLog.push({
-                date: new Date().toISOString().split("T")[0],
+                date: new Date(),
                 action: `Technology "${technology}" added`,
                 by: req.user.name || "System"
             });
@@ -773,7 +900,7 @@ export const removeCandidateTechnology = async (req, res) => {
 
         candidate.technologies = candidate.technologies.filter(t => t !== technology);
         candidate.activityLog.push({
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             action: `Technology "${technology}" removed`,
             by: req.user.name || "System"
         });
@@ -811,7 +938,7 @@ export const uploadCandidateResume = async (req, res) => {
 
         candidate.resumeLink = req.file.path.replace(/\\/g, "/");
         candidate.activityLog.push({
-            date: new Date().toISOString().split("T")[0],
+            date: new Date(),
             action: "Resume updated",
             by: req.user.name || "System"
         });
@@ -841,6 +968,7 @@ export const bulkUpdateCandidates = async (req, res) => {
             const candidate = await Candidate.findById(id);
             if (!candidate) continue;
 
+            const oldRole = candidate.role;
             const oldStatus = candidate.status;
             const updates = { ...data };
 
@@ -849,8 +977,16 @@ export const bulkUpdateCandidates = async (req, res) => {
                 updates.status = updates.stage;
             }
 
+            const statusChanged = updates.status && updates.status !== oldStatus;
+            const roleChanged = updates.role && updates.role !== oldRole;
+
+            if (statusChanged || roleChanged) {
+                if (oldRole) statsToUpdate.add(oldRole);
+                if (updates.role) statsToUpdate.add(updates.role);
+            }
+
             // If status is changing, log history and activity
-            if (updates.status && updates.status !== oldStatus) {
+            if (statusChanged) {
                 candidate.statusHistory.push({
                     status: updates.status,
                     changedAt: new Date(),
@@ -858,16 +994,13 @@ export const bulkUpdateCandidates = async (req, res) => {
                 });
 
                 candidate.activityLog.push({
-                    date: new Date().toISOString().split("T")[0],
+                    date: new Date(),
                     action: `Bulk update: Moved to ${updates.status}`,
                     by: req.user.name || "System"
                 });
-                
-                statsToUpdate.add(candidate.role);
             }
 
             // Handle tags specially if we want to append (though usually bulk set is easier)
-            // For now, let's assume standard Object.assign for simple fields
             Object.assign(candidate, updates);
 
             await candidate.save();

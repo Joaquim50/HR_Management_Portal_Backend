@@ -7,11 +7,15 @@ import Candidate from "../models/candidates/candidate.model.js";
  */
 export const updateJobStats = async (roleName) => {
     try {
+        console.log(`[DEBUG] updateJobStats called for role: "${roleName}"`);
         if (!roleName) return;
 
         // 1. Find the job opening for this role
         const jobOpening = await JobOpening.findOne({ role: roleName });
-        if (!jobOpening) return;
+        if (!jobOpening) {
+            console.log(`[DEBUG] No JobOpening found for role: "${roleName}"`);
+            return;
+        }
 
         // 2. Count candidates by status for this role
         const hiredCount = await Candidate.countDocuments({ 
@@ -28,6 +32,8 @@ export const updateJobStats = async (roleName) => {
             role: roleName,
             status: "Backup"
         });
+
+        console.log(`[DEBUG] New counts for ${roleName}: Hired=${hiredCount}, Rejected=${rejectedCount}, Backup=${backupCount}`);
 
         // 3. Update the JobOpening document
         jobOpening.hiredCount = hiredCount;

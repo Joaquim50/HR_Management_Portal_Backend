@@ -34,10 +34,19 @@ export const getDashboardStats = async (req, res) => {
         .limit(5);
 
         // 4. Recent Activity
-        const recentActivity = await Activity.find()
+        const days = req.query.days === 'all' ? 'all' : parseInt(req.query.days) || 2;
+        const activityQuery = {};
+        
+        if (days !== 'all') {
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - days);
+            activityQuery.createdAt = { $gte: startDate };
+        }
+
+        const recentActivity = await Activity.find(activityQuery)
             .populate("user", "name")
             .sort({ createdAt: -1 })
-            .limit(10);
+            .limit(50); // Increased limit as it's now filtered by date
 
         res.json({
             stats,
