@@ -201,6 +201,36 @@ If you did not request this, please ignore this email.
         res.status(500).json({ error: error.message });
     }
 };
+
+export const verifyResetToken = async (req, res) => {
+    try {
+        const { token } = req.params;
+
+        if (!token) {
+            return res.status(400).json({ message: "Token is required" });
+        }
+
+        // Hash incoming token
+        const hashedToken = crypto
+            .createHash("sha256")
+            .update(token)
+            .digest("hex");
+
+        const user = await User.findOne({
+            resetPasswordToken: hashedToken,
+            resetPasswordExpires: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ message: "Invalid or expired token" });
+        }
+
+        res.json({ message: "Token is valid" });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
 export const resetPassword = async (req, res) => {
     try {
         const { token, password, confirmPassword } = req.body;
