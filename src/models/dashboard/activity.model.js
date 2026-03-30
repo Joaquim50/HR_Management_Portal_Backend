@@ -7,7 +7,7 @@ const activitySchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ["status_change", "new_candidate", "interview_scheduled", "hired", "rejected"],
+        enum: ["status_change", "new_candidate", "interview_scheduled", "interview_rescheduled", "interview_cancelled", "interview_completed", "hired", "rejected", "email_sent", "note_added"],
         required: true
     },
     candidate: {

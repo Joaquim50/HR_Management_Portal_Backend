@@ -204,18 +204,23 @@ export const getCandidates = async (req, res) => {
             const myName = req.user.name;
             const myIdStr = req.user._id.toString();
 
+            const escEmail = myEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const escName = myName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const emailRe = new RegExp(`^${escEmail}$`, "i");
+            const nameRe = new RegExp(`^${escName}$`, "i");
+
             const interviewerFilter = { 
                 $or: [
-                    { interviewer: myEmail }, 
-                    { interviewer: myName },
+                    { interviewer: emailRe }, 
+                    { interviewer: nameRe },
                     { interviewer: req.user._id },
-                    { interviewer: { $in: [myEmail, myName, myIdStr] } },
-                    { "technicalHistory.by": myEmail },
-                    { "technicalHistory.by": myName },
-                    { "screeningHistory.by": myEmail },
-                    { "screeningHistory.by": myName },
-                    { "offerHistory.by": myEmail },
-                    { "offerHistory.by": myName }
+                    { interviewer: { $in: [emailRe, nameRe, req.user._id] } },
+                    { "technicalHistory.by": emailRe },
+                    { "technicalHistory.by": nameRe },
+                    { "screeningHistory.by": emailRe },
+                    { "screeningHistory.by": nameRe },
+                    { "offerHistory.by": emailRe },
+                    { "offerHistory.by": nameRe }
                 ] 
             };
             
@@ -770,15 +775,21 @@ export const updateCandidate = async (req, res) => {
 
                 // Remove interviewer from active assigned list if feedback was added
                 if (feedbackAdded) {
-                    const userEmail = req.user.email?.toLowerCase();
-                    const userName = req.user.name?.toLowerCase();
+                    const userEmail = (req.user.email || "").toLowerCase();
+                    const userName = (req.user.name || "").toLowerCase();
+                    const userIdStr = (req.user._id || req.user.id || "").toString().toLowerCase();
                     
                     if (Array.isArray(candidate.interviewer)) {
-                        candidate.interviewer = candidate.interviewer.filter(i => 
-                            i?.toLowerCase() !== userEmail && i?.toLowerCase() !== userName
-                        );
-                    } else if (candidate.interviewer?.toLowerCase() === userEmail || candidate.interviewer?.toLowerCase() === userName) {
-                        candidate.interviewer = [];
+                        candidate.interviewer = candidate.interviewer.filter(i => {
+                            if (!i) return false;
+                            const val = i.toString().toLowerCase();
+                            return val !== userEmail && val !== userName && val !== userIdStr;
+                        });
+                    } else if (candidate.interviewer) {
+                        const val = candidate.interviewer.toString().toLowerCase();
+                        if (val === userEmail || val === userName || val === userIdStr) {
+                            candidate.interviewer = [];
+                        }
                     }
                 }
 

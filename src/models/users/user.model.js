@@ -15,7 +15,10 @@ const userSchema = new mongoose.Schema({
     active: { type: Boolean, default: true },
     isInterviewer: { type: Boolean, default: false },
     permissions: { type: mongoose.Schema.Types.Mixed, default: {} },
-    refreshTokens: [String]
+    refreshTokens: [String],
+
+    resetPasswordToken: String,
+    resetPasswordExpires: Date
 }, { timestamps: true });
 
 export default mongoose.model("User", userSchema);
