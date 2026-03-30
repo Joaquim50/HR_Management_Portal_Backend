@@ -18,7 +18,7 @@ export const updateJobStats = async (roleName) => {
         }
 
         // 2. Count candidates by status for this role
-        const hiredCount = await Candidate.countDocuments({ 
+        const joinedCount = await Candidate.countDocuments({ 
             role: roleName, 
             status: "Joined" 
         });
@@ -28,17 +28,22 @@ export const updateJobStats = async (roleName) => {
             status: "Rejected" 
         });
 
-        const backupCount = await Candidate.countDocuments({
+        const explicitBackupCount = await Candidate.countDocuments({
             role: roleName,
             status: "Backup"
         });
 
-        console.log(`[DEBUG] New counts for ${roleName}: Hired=${hiredCount}, Rejected=${rejectedCount}, Backup=${backupCount}`);
+        // 3. New Logic: Cap Hired at Required, push overflow to Backup
+        const actualHiredCount = Math.min(joinedCount, jobOpening.requiredCount);
+        const overflowBackupCount = Math.max(0, joinedCount - jobOpening.requiredCount);
+        const finalBackupCount = explicitBackupCount + overflowBackupCount;
 
-        // 3. Update the JobOpening document
-        jobOpening.hiredCount = hiredCount;
+        console.log(`[DEBUG] Joined=${joinedCount}, Required=${jobOpening.requiredCount} -> Hired=${actualHiredCount}, OverflowBackup=${overflowBackupCount}`);
+
+        // 4. Update the JobOpening document
+        jobOpening.hiredCount = actualHiredCount;
         jobOpening.rejectedCount = rejectedCount;
-        jobOpening.backupCount = backupCount;
+        jobOpening.backupCount = finalBackupCount;
         
         await jobOpening.save();
 

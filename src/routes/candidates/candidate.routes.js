@@ -4,6 +4,7 @@ import {
     bulkImportExcel,
     getCandidates,
     getCandidateById,
+    getCandidateStageCounts,
     createCandidate,
     updateCandidateStatus,
     updateCandidate,
@@ -27,6 +28,9 @@ const router = express.Router();
 router.post("/sync", protect, authorize("candidates", "create"), syncCandidates);
 router.post("/import", protect, authorize("candidates", "create"), upload.single("file"), bulkImportExcel);
 router.post("/bulk-update", protect, authorize("candidates", "update"), bulkUpdateCandidates);
+
+// Aggregation endpoints (before :id routes)
+router.get("/stage-counts", protect, getCandidateStageCounts);
 
 // Standard CRUD
 router.get("/", protect, getCandidates); // Security handled in controller for interviewers

@@ -21,6 +21,7 @@ export const getDashboardStats = async (req, res) => {
             role: job.role,
             required: job.requiredCount,
             hired: job.hiredCount,
+            backup: job.backupCount, // Added backup count
             progress: job.requiredCount > 0 ? Math.round((job.hiredCount / job.requiredCount) * 100) : 0
         }));
 
