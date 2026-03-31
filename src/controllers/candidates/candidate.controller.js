@@ -3,6 +3,7 @@ import fs from "fs";
 import * as sheetService from "../../services/sheet.service.js";
 import Candidate from "../../models/candidates/candidate.model.js";
 import { updateJobStats } from "../../utils/jobUtils.js";
+import { parseSheetDate } from "../../utils/dateUtils.js";
 import Activity from "../../models/dashboard/activity.model.js";
 import { sendCandidateEmail } from "../../services/email.service.js";
 import Interview from "../../models/interviews/interview.model.js";
@@ -28,7 +29,7 @@ export const bulkImportExcel = async (req, res) => {
             return res.status(400).json({ message: "Please upload an Excel file" });
         }
 
-        const workbook = xlsx.readFile(req.file.path);
+        const workbook = xlsx.readFile(req.file.path, { cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const data = xlsx.utils.sheet_to_json(sheet);
@@ -141,7 +142,7 @@ export const bulkImportExcel = async (req, res) => {
                 hasLiveExperience,
                 mumbaiComfort,
                 details,
-                submissionDate: row["Submission Date"] || row["Timestamp"] || new Date().toISOString(),
+                submissionDate: parseSheetDate(row["Submission Date"] || row["Timestamp"] || row["TimeStamp"] || new Date().toISOString()),
                 status: "New",
                 statusHistory: [{ status: "New", changedAt: new Date(), changedBy: req.user._id }],
                 activityLog: [{
@@ -251,30 +252,35 @@ export const getCandidates = async (req, res) => {
 
         // Candidate Type Filter (Fresher, Experienced, Intern, Immediate Joiner, Backup)
         if (type && type !== "All" && type !== "All Types") {
+            const types = type.split(",").map(t => t.trim()).filter(Boolean);
             const typeCriteria = [];
 
-            // 1. Check candidateType field (exact match after mapping)
-            typeCriteria.push({ candidateType: type });
+            for (const t of types) {
+                // 1. Check candidateType field (exact match after mapping)
+                typeCriteria.push({ candidateType: t });
 
-            // 2. Check tags (exact or partial)
-            typeCriteria.push({ tags: type });
+                // 2. Check tags (exact or partial)
+                typeCriteria.push({ tags: t });
 
-            // 3. Fallback to behavioral patterns (backward compatibility)
-            if (type === "Fresher") {
-                typeCriteria.push({ totalExperience: { $regex: /^0/, $options: "i" } });
-                typeCriteria.push({ relevantExperience: { $regex: /^0/, $options: "i" } });
-            } else if (type === "Experienced") {
-                typeCriteria.push({ totalExperience: { $ne: "0", $exists: true } });
-            } else if (type === "Immediate Joiner") {
-                typeCriteria.push({ noticePeriod: { $regex: /Immediate/i } });
-            } else if (type === "Intern") {
-                typeCriteria.push({ role: { $regex: /Intern/i } });
-            } else if (type === "Backup") {
-                typeCriteria.push({ status: "Backup" });
+                // 3. Fallback to behavioral patterns (backward compatibility)
+                if (t === "Fresher") {
+                    typeCriteria.push({ totalExperience: { $regex: /^0/, $options: "i" } });
+                    typeCriteria.push({ relevantExperience: { $regex: /^0/, $options: "i" } });
+                } else if (t === "Experienced") {
+                    typeCriteria.push({ totalExperience: { $ne: "0", $exists: true } });
+                } else if (t === "Immediate Joiner") {
+                    typeCriteria.push({ noticePeriod: { $regex: /Immediate/i } });
+                } else if (t === "Intern") {
+                    typeCriteria.push({ role: { $regex: /Intern/i } });
+                } else if (t === "Backup") {
+                    typeCriteria.push({ status: "Backup" });
+                }
             }
 
             // Apply as $or
-            query.$or = query.$or ? [...query.$or, { $or: typeCriteria }] : [{ $or: typeCriteria }];
+            if (typeCriteria.length > 0) {
+                query.$or = query.$or ? [...query.$or, { $or: typeCriteria }] : [{ $or: typeCriteria }];
+            }
         }
 
         // Notice Period Filter
@@ -316,6 +322,72 @@ export const getCandidates = async (req, res) => {
             page: parseInt(page),
             pages: Math.ceil(total / parseInt(limit))
         });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// @desc    Get candidate counts grouped by stage/status
+// @route   GET /api/candidates/stage-counts
+// @access  Private
+export const getCandidateStageCounts = async (req, res) => {
+    try {
+        const query = {};
+
+        // Security: Reuse same interviewer restriction logic as getCandidates
+        const hasGeneralView = req.user.role === "superadmin" || 
+                              (req.user.permissions?.candidates && Object.values(req.user.permissions.candidates).some(m => m.view));
+        
+        if (!hasGeneralView) {
+            if (!req.user.isInterviewer) {
+                return res.status(403).json({ message: "Access denied" });
+            }
+            const myEmail = req.user.email;
+            const myName = req.user.name;
+
+            const escEmail = myEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const escName = myName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const emailRe = new RegExp(`^${escEmail}$`, "i");
+            const nameRe = new RegExp(`^${escName}$`, "i");
+
+            const interviewerFilter = { 
+                $or: [
+                    { interviewer: emailRe }, 
+                    { interviewer: nameRe },
+                    { interviewer: req.user._id },
+                    { interviewer: { $in: [emailRe, nameRe, req.user._id] } },
+                    { "technicalHistory.by": emailRe },
+                    { "technicalHistory.by": nameRe },
+                    { "screeningHistory.by": emailRe },
+                    { "screeningHistory.by": nameRe },
+                    { "offerHistory.by": emailRe },
+                    { "offerHistory.by": nameRe }
+                ] 
+            };
+            
+            const interviews = await Interview.find({ interviewer: req.user._id });
+            const assignedIds = interviews.map(inv => inv.candidate);
+            if (assignedIds.length > 0) {
+                interviewerFilter.$or.push({ _id: { $in: assignedIds } });
+            }
+
+            query.$and = [interviewerFilter];
+        }
+
+        const results = await Candidate.aggregate([
+            { $match: query },
+            { $group: { _id: "$status", count: { $sum: 1 } } }
+        ]);
+
+        // Convert array to object: { "New": 10, "Screening": 5, ... }
+        const stageCounts = {};
+        const allStages = ["New", "Screening", "Technical", "Offer", "Joined", "Rejected"];
+        allStages.forEach(s => { stageCounts[s] = 0; });
+        results.forEach(r => {
+            if (r._id) stageCounts[r._id] = r.count;
+        });
+
+        res.json(stageCounts);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

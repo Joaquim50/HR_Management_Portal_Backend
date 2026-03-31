@@ -1,4 +1,5 @@
 import JobOpening from "../../models/jobs/jobOpening.model.js";
+import { updateJobStats } from "../../utils/jobUtils.js";
 
 // @desc    Create a new job opening
 // @route   POST /api/jobs
@@ -66,6 +67,17 @@ export const updateJobOpening = async (req, res) => {
 
         if (!job) {
             return res.status(404).json({ message: "Job opening not found" });
+        }
+
+        // Trigger a recalculation since Required Count may have changed, 
+        // which affects Hired vs Backup distribution.
+        if (req.body.requiredCount !== undefined) {
+             // We do this asynchronously so we don't block the response, but updating it immediately is fine too.
+             await updateJobStats(job.role);
+             
+             // Re-fetch to return the updated stats (hiredCount, backupCount) directly in the response
+             const updatedJob = await JobOpening.findById(req.params.id);
+             return res.json(updatedJob);
         }
 
         res.json(job);

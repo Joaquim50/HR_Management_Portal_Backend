@@ -1,6 +1,7 @@
 import axios from "axios";
 import Candidate from "../models/candidates/candidate.model.js";
 import { updateJobStats } from "../utils/jobUtils.js";
+import { parseSheetDate } from "../utils/dateUtils.js";
 
 export const syncSheetData = async (userId) => {
     const RANGE = "Sheet1";
@@ -135,7 +136,7 @@ export const syncSheetData = async (userId) => {
                 hasLiveExperience,
                 mumbaiComfort,
                 details,
-                submissionDate: rowData["TimeStamp"] || rowData["Timestamp"],
+                submissionDate: parseSheetDate(rowData["TimeStamp"] || rowData["Timestamp"]),
                 status: "New",
                 statusHistory: [{ status: "New", changedAt: new Date(), changedBy: userId }],
                 activityLog: [{
